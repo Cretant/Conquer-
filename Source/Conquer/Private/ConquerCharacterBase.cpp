@@ -41,24 +41,63 @@ void AConquerCharacterBase::BeginPlay()
 	Attributes->OnDeath.AddDynamic(this, &AConquerCharacterBase::HandleDeath);
 }
 
+namespace
+{
+	// Where the mannequins live in the Third Person feature pack across recent engine versions.
+	// The path from DefaultGame.ini is tried first; these are fallbacks so a renamed pack still works.
+	const TCHAR* FallbackBodyMeshes[] = {
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"),
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn.SKM_Quinn"),
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+	};
+
+	const TCHAR* FallbackAnimClasses[] = {
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed.ABP_Unarmed_C"),
+		TEXT("/Game/Characters/Mannequins/Animations/ABP_Quinn.ABP_Quinn_C"),
+		TEXT("/Game/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny_C"),
+	};
+}
+
 void AConquerCharacterBase::ApplyPlaceholderBody()
 {
 	USkeletalMeshComponent* MeshComp = GetMesh();
-	if (MeshComp->GetSkeletalMeshAsset() == nullptr && BodyMeshPath.IsValid())
+
+	if (MeshComp->GetSkeletalMeshAsset() == nullptr)
 	{
-		if (USkeletalMesh* Body = Cast<USkeletalMesh>(BodyMeshPath.TryLoad()))
+		USkeletalMesh* Body = BodyMeshPath.IsValid() ? Cast<USkeletalMesh>(BodyMeshPath.TryLoad()) : nullptr;
+		for (const TCHAR* Path : FallbackBodyMeshes)
+		{
+			if (Body)
+			{
+				break;
+			}
+			Body = LoadObject<USkeletalMesh>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
+
+		if (Body)
 		{
 			MeshComp->SetSkeletalMeshAsset(Body);
 		}
 		else
 		{
-			UE_LOG(LogConquer, Warning, TEXT("%s: could not load body mesh %s. Add the Third Person feature pack or fix the path in DefaultGame.ini."), *GetName(), *BodyMeshPath.ToString());
+			UE_LOG(LogConquer, Warning, TEXT("%s: no placeholder body found. Add the Third Person feature pack, or set BodyMeshPath in Config/DefaultGame.ini."), *GetName());
 		}
 	}
 
-	if (MeshComp->GetAnimClass() == nullptr && AnimClassPath.IsValid())
+	if (MeshComp->GetAnimClass() == nullptr && MeshComp->GetSkeletalMeshAsset() != nullptr)
 	{
-		if (UClass* AnimClass = AnimClassPath.TryLoadClass<UAnimInstance>())
+		UClass* AnimClass = AnimClassPath.IsValid() ? AnimClassPath.TryLoadClass<UAnimInstance>() : nullptr;
+		for (const TCHAR* Path : FallbackAnimClasses)
+		{
+			if (AnimClass)
+			{
+				break;
+			}
+			AnimClass = LoadClass<UAnimInstance>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
+
+		if (AnimClass)
 		{
 			MeshComp->SetAnimInstanceClass(AnimClass);
 		}

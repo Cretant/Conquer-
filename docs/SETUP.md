@@ -35,6 +35,12 @@ Press **Play** (or Alt+P). Wren spawns, then three soldiers come at you after a 
 
 The controls are in the [README](../README.md) and on screen in the top left.
 
+## If something looks wrong
+
+- **The build fails:** send Claude the error text from the window, or from **Window > Output Log** in the editor.
+- **Characters are invisible, or T-posing:** the placeholder mannequins weren't found. Check step 3 was done. If it was, open **Window > Output Log**, search for `placeholder body`, and send Claude what it says.
+- **Nothing spawns:** make sure you pressed Play in the `Arena` level and not another map.
+
 ## What to look for when you play
 
 This is a feel test, not a looking-good test. Things worth telling Claude about:
