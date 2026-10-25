@@ -1,0 +1,20 @@
+using UnrealBuildTool;
+
+public class Conquer : ModuleRules
+{
+	public Conquer(ReadOnlyTargetRules Target) : base(Target)
+	{
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"EnhancedInput",
+			"AIModule",
+			"GameplayTasks"
+		});
+	}
+}
