@@ -5,6 +5,8 @@
 #include "Conquer.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -20,6 +22,12 @@ AConquerCharacterBase::AConquerCharacterBase()
 
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
 	GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -96.f), FRotator(0.f, -90.f, 0.f));
+
+	Weapon = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Weapon"));
+	Weapon->SetupAttachment(GetMesh());
+	Weapon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Weapon->SetGenerateOverlapEvents(false);
+	Weapon->SetCanEverAffectNavigation(false);
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->bOrientRotationToMovement = true;
@@ -104,6 +112,13 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 			MeshComp->SetAnimInstanceClass(AnimClass);
 		}
 	}
+
+	if (!Weapon->GetStaticMesh() && WeaponMeshPath.IsValid())
+	{
+		Weapon->SetStaticMesh(Cast<UStaticMesh>(WeaponMeshPath.TryLoad()));
+	}
+	Weapon->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepRelativeTransform, WeaponSocket);
+	Weapon->SetRelativeLocationAndRotation(WeaponLocation, WeaponRotation);
 }
 
 void AConquerCharacterBase::ApplyPlaceholderAnimations()
@@ -138,6 +153,7 @@ void AConquerCharacterBase::ApplyPlaceholderAnimations()
 	Fill(Combat->HitReactMontage, HitReactMontagePath);
 	Fill(Combat->HeavyHitReactMontage, HeavyHitReactMontagePath);
 	Fill(Combat->GuardBrokenMontage, GuardBrokenMontagePath);
+	Fill(Combat->BlockMontage, BlockMontagePath);
 
 	if (DeathMontages.Num() == 0)
 	{

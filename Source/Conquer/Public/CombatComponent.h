@@ -144,6 +144,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
 	TObjectPtr<UAnimMontage> GuardBrokenMontage;
 
+	/** Played when this character blocks a hit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> BlockMontage;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
 	bool bDrawDebug = true;
 

@@ -9,6 +9,7 @@ class UCombatComponent;
 class UAttributesComponent;
 class URageComponent;
 class UAnimMontage;
+class UStaticMeshComponent;
 
 /** Shared base for Wren and every enemy: health, stamina, the duel system and death. */
 UCLASS(Abstract, Config = Game)
@@ -55,12 +56,29 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<URageComponent> Rage;
 
+	/** The sword in the right hand. Purely visual: hits are resolved by the combat component. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> Weapon;
+
 	/** Placeholder body, set in DefaultGame.ini so it can change without recompiling. */
 	UPROPERTY(Config)
 	FSoftObjectPath BodyMeshPath;
 
 	UPROPERTY(Config)
 	FSoftClassPath AnimClassPath;
+
+	/** Placeholder weapon and where it sits relative to the hand bone. */
+	UPROPERTY(Config)
+	FSoftObjectPath WeaponMeshPath;
+
+	UPROPERTY(Config)
+	FName WeaponSocket = TEXT("hand_r");
+
+	UPROPERTY(Config)
+	FVector WeaponLocation = FVector::ZeroVector;
+
+	UPROPERTY(Config)
+	FRotator WeaponRotation = FRotator::ZeroRotator;
 
 	/** Placeholder combat animations, also set in DefaultGame.ini. Montages set on the components win. */
 	UPROPERTY(Config) FSoftObjectPath LightLeftMontagePath;
@@ -72,6 +90,7 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath HitReactMontagePath;
 	UPROPERTY(Config) FSoftObjectPath HeavyHitReactMontagePath;
 	UPROPERTY(Config) FSoftObjectPath GuardBrokenMontagePath;
+	UPROPERTY(Config) FSoftObjectPath BlockMontagePath;
 	UPROPERTY(Config) TArray<FSoftObjectPath> DeathMontagePaths;
 
 	/** One is picked at random on death; with none, the body ragdolls. */

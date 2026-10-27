@@ -317,6 +317,7 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 	if (!bUnblockable && bCanBlock && GuardDirection == Direction)
 	{
 		OwnerCharacter->GetAttributes()->DrainStamina(BlockStaminaDrain);
+		PlayReaction(BlockMontage, 1.5f);
 		return EHitOutcome::Blocked;
 	}
 

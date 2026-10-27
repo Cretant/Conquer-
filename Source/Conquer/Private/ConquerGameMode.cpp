@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "Misc/CommandLine.h"
 
 AConquerGameMode::AConquerGameMode()
 {
@@ -32,6 +33,27 @@ void AConquerGameMode::BeginPlay()
 		FTimerHandle Handle;
 		GetWorldTimerManager().SetTimer(Handle, this, &AConquerGameMode::SpawnFirstWave, 1.5f, false);
 	}
+
+#if !UE_BUILD_SHIPPING
+	// Headless checks: -ConquerShots=4,6,8 saves a screenshot (Saved/Screenshots) at each of those seconds.
+	FString Shots;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ConquerShots="), Shots))
+	{
+		TArray<FString> Times;
+		Shots.ParseIntoArray(Times, TEXT(","));
+		for (const FString& Time : Times)
+		{
+			FTimerHandle Handle;
+			GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+				{
+					PC->ConsoleCommand(TEXT("HighResShot 1280x720"));
+				}
+			}), FCString::Atof(*Time), false);
+		}
+	}
+#endif
 }
 
 FVector AConquerGameMode::GetArenaCentre() const
