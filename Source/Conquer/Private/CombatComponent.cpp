@@ -141,6 +141,7 @@ bool UCombatComponent::Dodge(const FVector& WorldDirection)
 	}
 	DodgeTimeLeft = DodgeInvulnerableTime;
 	OwnerCharacter->LaunchCharacter(Dir * DodgeStrength, true, false);
+	PlayReaction(DodgeMontage, 1.3f);
 	return true;
 }
 
@@ -290,6 +291,7 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 			return EHitOutcome::Ignored;
 		}
 		Stagger(GuardBrokenStaggerTime);
+		PlayReaction(GuardBrokenMontage);
 		return EHitOutcome::GuardBroken;
 	}
 
@@ -304,6 +306,7 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		if (Attacker)
 		{
 			Attacker->GetCombat()->Stagger(ParriedStaggerTime);
+			Attacker->GetCombat()->PlayReaction(Attacker->GetCombat()->GuardBrokenMontage);
 		}
 		return EHitOutcome::Parried;
 	}
@@ -322,6 +325,7 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 	if (!OwnerCharacter->IsDead() && !bHyperArmor && !bRaging)
 	{
 		Stagger(Kind == EAttackKind::Heavy ? HitStaggerTime * 1.6f : HitStaggerTime);
+		PlayReaction(Kind == EAttackKind::Heavy ? HeavyHitReactMontage : HitReactMontage);
 	}
 	return EHitOutcome::Hit;
 }
@@ -342,6 +346,16 @@ void UCombatComponent::PlayAttackMontage()
 	if (Montage && Anim && Spec.TotalTime() > 0.f)
 	{
 		Anim->Montage_Play(Montage, Montage->GetPlayLength() / Spec.TotalTime());
+	}
+}
+
+void UCombatComponent::PlayReaction(UAnimMontage* Montage, float PlayRate)
+{
+	USkeletalMeshComponent* Mesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
+	UAnimInstance* Anim = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	if (Montage && Anim)
+	{
+		Anim->Montage_Play(Montage, PlayRate);
 	}
 }
 

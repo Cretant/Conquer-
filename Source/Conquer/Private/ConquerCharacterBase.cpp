@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 AConquerCharacterBase::AConquerCharacterBase()
@@ -37,6 +38,7 @@ void AConquerCharacterBase::BeginPlay()
 	Super::BeginPlay();
 
 	ApplyPlaceholderBody();
+	ApplyPlaceholderAnimations();
 	Attributes->OnDamaged.AddDynamic(this, &AConquerCharacterBase::HandleDamaged);
 	Attributes->OnDeath.AddDynamic(this, &AConquerCharacterBase::HandleDeath);
 }
@@ -104,6 +106,57 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 	}
 }
 
+void AConquerCharacterBase::ApplyPlaceholderAnimations()
+{
+	auto Load = [this](const FSoftObjectPath& Path)
+	{
+		UAnimMontage* Montage = Cast<UAnimMontage>(Path.TryLoad());
+		if (!Montage)
+		{
+			UE_LOG(LogConquer, Warning, TEXT("%s: animation %s not found. Run Tools/build_anims.py."), *GetName(), *Path.ToString());
+		}
+		return Montage;
+	};
+	auto Fill = [&Load](TObjectPtr<UAnimMontage>& Montage, const FSoftObjectPath& Path)
+	{
+		if (!Montage && Path.IsValid())
+		{
+			Montage = Load(Path);
+		}
+	};
+
+	Fill(Combat->LightAttack.MontageLeft, LightLeftMontagePath);
+	Fill(Combat->LightAttack.MontageTop, LightTopMontagePath);
+	Fill(Combat->LightAttack.MontageRight, LightRightMontagePath);
+	Fill(Combat->HeavyAttack.MontageLeft, HeavyMontagePath);
+	Fill(Combat->HeavyAttack.MontageTop, HeavyMontagePath);
+	Fill(Combat->HeavyAttack.MontageRight, HeavyMontagePath);
+	Fill(Combat->GuardBreakAttack.MontageLeft, GuardBreakMontagePath);
+	Fill(Combat->GuardBreakAttack.MontageTop, GuardBreakMontagePath);
+	Fill(Combat->GuardBreakAttack.MontageRight, GuardBreakMontagePath);
+	Fill(Combat->DodgeMontage, DodgeMontagePath);
+	Fill(Combat->HitReactMontage, HitReactMontagePath);
+	Fill(Combat->HeavyHitReactMontage, HeavyHitReactMontagePath);
+	Fill(Combat->GuardBrokenMontage, GuardBrokenMontagePath);
+
+	if (DeathMontages.Num() == 0)
+	{
+		for (const FSoftObjectPath& Path : DeathMontagePaths)
+		{
+			if (UAnimMontage* Montage = Load(Path))
+			{
+				DeathMontages.Add(Montage);
+			}
+		}
+	}
+
+	// Movement is driven by code (dodges launch the capsule), so animations play in place.
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+	{
+		Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+	}
+}
+
 bool AConquerCharacterBase::IsDead() const
 {
 	return Attributes && Attributes->IsDead();
@@ -137,7 +190,13 @@ void AConquerCharacterBase::HandleDeath(AActor* Killer)
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	USkeletalMeshComponent* MeshComp = GetMesh();
-	if (MeshComp->GetPhysicsAsset())
+	UAnimInstance* Anim = MeshComp->GetAnimInstance();
+	if (Anim && DeathMontages.Num() > 0)
+	{
+		// Death montages don't blend out, so the body holds the last frame on the ground.
+		Anim->Montage_Play(DeathMontages[FMath::RandRange(0, DeathMontages.Num() - 1)]);
+	}
+	else if (MeshComp->GetPhysicsAsset())
 	{
 		MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
 		MeshComp->SetSimulatePhysics(true);

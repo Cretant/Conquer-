@@ -8,6 +8,7 @@
 class UCombatComponent;
 class UAttributesComponent;
 class URageComponent;
+class UAnimMontage;
 
 /** Shared base for Wren and every enemy: health, stamina, the duel system and death. */
 UCLASS(Abstract, Config = Game)
@@ -61,9 +62,26 @@ protected:
 	UPROPERTY(Config)
 	FSoftClassPath AnimClassPath;
 
+	/** Placeholder combat animations, also set in DefaultGame.ini. Montages set on the components win. */
+	UPROPERTY(Config) FSoftObjectPath LightLeftMontagePath;
+	UPROPERTY(Config) FSoftObjectPath LightTopMontagePath;
+	UPROPERTY(Config) FSoftObjectPath LightRightMontagePath;
+	UPROPERTY(Config) FSoftObjectPath HeavyMontagePath;
+	UPROPERTY(Config) FSoftObjectPath GuardBreakMontagePath;
+	UPROPERTY(Config) FSoftObjectPath DodgeMontagePath;
+	UPROPERTY(Config) FSoftObjectPath HitReactMontagePath;
+	UPROPERTY(Config) FSoftObjectPath HeavyHitReactMontagePath;
+	UPROPERTY(Config) FSoftObjectPath GuardBrokenMontagePath;
+	UPROPERTY(Config) TArray<FSoftObjectPath> DeathMontagePaths;
+
+	/** One is picked at random on death; with none, the body ragdolls. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conquer")
+	TArray<TObjectPtr<UAnimMontage>> DeathMontages;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conquer")
 	float CorpseLifeSpan = 10.f;
 
 private:
 	void ApplyPlaceholderBody();
+	void ApplyPlaceholderAnimations();
 };

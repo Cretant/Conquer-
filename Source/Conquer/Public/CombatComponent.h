@@ -85,6 +85,9 @@ public:
 
 	const FAttackSpec& GetSpec(EAttackKind Kind) const;
 
+	/** Plays a one-off reaction (flinch, dodge, death) over whatever the owner is doing. */
+	void PlayReaction(UAnimMontage* Montage, float PlayRate = 1.f);
+
 	// --- Tuning ------------------------------------------------------------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
@@ -128,6 +131,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
 	float DodgeStrength = 1400.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> HeavyHitReactMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> GuardBrokenMontage;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
 	bool bDrawDebug = true;
