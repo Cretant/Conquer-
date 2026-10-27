@@ -1,0 +1,25 @@
+# Unreal generated
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+Platforms/
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.VC.db
+*.opensdf
+*.sdf
+*.xcworkspace
+*.xcodeproj
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Raw third-party downloads (see Art/LICENSES.md) and what Tools/build_sword.py imports from them
+Art/Quaternius/
+Art/Mixamo/
+Content/Quaternius/
+Content/Conquer/Animations/Retarget/
