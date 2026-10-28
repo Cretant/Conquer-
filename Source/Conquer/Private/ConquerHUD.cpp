@@ -1,6 +1,7 @@
 #include "ConquerHUD.h"
 #include "WrenCharacter.h"
 #include "EnemySoldier.h"
+#include "GarrickBoss.h"
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
@@ -55,6 +56,18 @@ void AConquerHUD::DrawHUD()
 	const URageComponent* Rage = Wren->GetRage();
 	const bool bRageReady = Rage->GetRageFraction() >= 1.f && !Rage->IsRageActive();
 	DrawBar(BarX, BarY, 260.f, 10.f, Rage->GetRageFraction(), RageRed, bRageReady ? TEXT("RAGE READY [R / Y]") : TEXT("Rage"));
+
+	// Boss health across the top of the screen.
+	for (TActorIterator<AGarrickBoss> It(GetWorld()); It; ++It)
+	{
+		if (!It->IsDead() && FVector::Dist(It->GetActorLocation(), Wren->GetActorLocation()) < 4000.f)
+		{
+			const float BossW = W * 0.4f;
+			DrawText(It->DisplayName, FLinearColor::White, (W - BossW) * 0.5f, 34.f, nullptr, 1.2f);
+			DrawBar((W - BossW) * 0.5f, 56.f, BossW, 12.f, It->GetAttributes()->GetHealthFraction(), FLinearColor(0.6f, 0.08f, 0.06f), FString());
+			break;
+		}
+	}
 
 	// Enemy guard indicators.
 	for (TActorIterator<AEnemySoldier> It(GetWorld()); It; ++It)
@@ -113,7 +126,8 @@ void AConquerHUD::DrawGuardIndicator(const FVector2D& Centre, const UCombatCompo
 	for (EGuardDirection Side : { EGuardDirection::Left, EGuardDirection::Top, EGuardDirection::Right })
 	{
 		const FVector2D P = Centre + SideOffset(Side, Size);
-		FLinearColor Color = Combat->GetGuardDirection() == Side && Combat->bGuardRaised ? GuardActive : GuardIdle;
+		const bool bGuarding = Combat->GetGuardDirection() == Side || Combat->bBlockAllDirections;
+		FLinearColor Color = bGuarding && Combat->bGuardRaised ? GuardActive : GuardIdle;
 		float Scale = 1.f;
 
 		if (bAttacking && Combat->GetAttackDirection() == Side)

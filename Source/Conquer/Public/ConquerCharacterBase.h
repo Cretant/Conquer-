@@ -84,6 +84,10 @@ protected:
 	UPROPERTY(Config)
 	FRotator MeshRotation = FRotator(0.f, -90.f, 0.f);
 
+	/** Multiplies the body's colour (the PBR material's "Tint"), so two characters sharing a model read differently. */
+	UPROPERTY(Config)
+	FLinearColor BodyTint = FLinearColor::White;
+
 	/** Locomotion clips for bodies driven by UConquerAnimInstance instead of an animation blueprint. */
 	UPROPERTY(Config) FSoftObjectPath IdleAnimPath;
 	UPROPERTY(Config) FSoftObjectPath WalkAnimPath;
@@ -132,6 +136,7 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath HeavyHitReactMontagePath;
 	UPROPERTY(Config) FSoftObjectPath GuardBrokenMontagePath;
 	UPROPERTY(Config) FSoftObjectPath BlockMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ThrustMontagePath;
 	UPROPERTY(Config) TArray<FSoftObjectPath> DeathMontagePaths;
 
 	/** "From=>To" path rewrites tried before each montage path; the rewritten montage is used if it exists locally. */
@@ -144,7 +149,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conquer")
 	float CorpseLifeSpan = 10.f;
 
+	/** Loads an animation, preferring a local-only version (LocalAnimOverrides) when one exists. */
+	template <typename T>
+	T* LoadAnimation(const FSoftObjectPath& Path) const { return Cast<T>(LoadAnimationObject(Path)); }
+
 private:
+	UObject* LoadAnimationObject(const FSoftObjectPath& Path) const;
 	void ApplyPlaceholderBody();
 	void ApplyPlaceholderAnimations();
 };

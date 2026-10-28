@@ -16,6 +16,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TSoftObjectPtr<UWorld> ArenaLevel;
 
+	/** Opened by the 2 key; every other key opens the arena. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	TSoftObjectPtr<UWorld> KeepHallLevel;
+
 	/** Ignores keys for this long after the menu opens, so a key still held from before doesn't skip it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	float InputDelay = 0.5f;

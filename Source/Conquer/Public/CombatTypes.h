@@ -19,7 +19,9 @@ enum class EAttackKind : uint8
 {
 	Light,
 	Heavy,
-	GuardBreak
+	GuardBreak,
+	/** A charging lunge; only bosses use it. */
+	Thrust
 };
 
 /** An attack moves through windup (readable, can be parried or feinted), active (deals the hit) and recovery. */

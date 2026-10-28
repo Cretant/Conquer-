@@ -31,6 +31,10 @@ PUBLIC = {
     "AM_Death_02": (PACK + "Death/MM_Death_Front_01", True),
     "AM_Death_03": (PACK + "Death/MM_Death_Front_02", True),
     "AM_Death_04": (PACK + "Death/MM_Death_Front_03", True),
+    # Sir Garrick's: the phase-two roar, kneeling for the execution, and the shield bash.
+    "AM_Roar": (SWORD + "A_Hit_Knockback", False),
+    "AM_Kneel": (SWORD + "A_Fixing_Kneeling", True),
+    "AM_ShieldBash": (SWORD + "A_Melee_Hook", False),
 }
 # The same montages from Mixamo's Sword And Shield Pack, built only where that pack has been imported. They stay
 # out of git; the game prefers them when they exist (see LocalAnimOverrides in Config/DefaultGame.ini).
@@ -46,6 +50,8 @@ MIXAMO = dict(PUBLIC, **{
     "AM_GuardBroken": (MX + "A_MX_Impact_3", False),
     "AM_Death_01": (MX + "A_MX_Death", True),
     "AM_Death_02": (MX + "A_MX_Death_2", True),
+    "AM_Roar": (MX + "A_MX_Power_Up", False),
+    "AM_ShieldBash": (MX + "A_MX_Attack_3", False),
 })
 
 assets = unreal.EditorAssetLibrary

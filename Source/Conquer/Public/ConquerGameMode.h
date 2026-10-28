@@ -47,17 +47,25 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	AEnemySoldier* SpawnEnemy(TSubclassOf<AEnemySoldier> Class, const FVector& Location);
+	FVector GetArenaCentre() const;
+
+	/** Once set, the next enemy death ends the fight instead of bringing on the captain. */
+	bool bCaptainSpawned = false;
+
 private:
 	void SpawnFirstWave();
 	void SpawnCaptain();
-	AEnemySoldier* SpawnEnemy(TSubclassOf<AEnemySoldier> Class, const FVector& Location);
 
 	UFUNCTION()
 	void HandleEnemyDeath(AActor* Killer);
 
-	FVector GetArenaCentre() const;
+	// Headless screenshots (-ConquerShots), taken one after another.
+	void ScheduleNextShot();
+	void TakeShot();
+	TArray<float> PendingShotTimes;
+	FTimerHandle ShotTimer;
 
 	TMap<TWeakObjectPtr<AActor>, float> AttackTokenExpiry;
 	int32 AliveInWave = 0;
-	bool bCaptainSpawned = false;
 };

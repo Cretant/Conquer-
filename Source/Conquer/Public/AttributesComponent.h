@@ -6,6 +6,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDamagedSignature, float, Amount, AActor*, DamageCauser);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDeathSignature, AActor*, Killer);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDownedSignature, AActor*, DamageCauser);
 
 /** Health and stamina. Stamina regenerates after a short delay once the character stops spending it. */
 UCLASS(ClassGroup = (Conquer), meta = (BlueprintSpawnableComponent))
@@ -47,6 +48,14 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Attributes")
 	FOnDeathSignature OnDeath;
+
+	/** Fires once when damage would have taken health below MinHealth. */
+	UPROPERTY(BlueprintAssignable, Category = "Attributes")
+	FOnDownedSignature OnDowned;
+
+	/** Damage can't take health below this. Above zero, the owner goes down instead of dying (bosses wait for an execution). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
+	float MinHealth = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes")
 	float MaxHealth = 100.f;

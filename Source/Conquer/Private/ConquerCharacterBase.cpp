@@ -14,6 +14,7 @@
 #include "Animation/AnimSequence.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/PackageName.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 AConquerCharacterBase::AConquerCharacterBase()
 {
@@ -138,9 +139,20 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 	Shield->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepRelativeTransform, ShieldSocket);
 	Shield->SetRelativeLocationAndRotation(ShieldLocation, ShieldRotation);
 
+	if (!BodyTint.Equals(FLinearColor::White))
+	{
+		for (int32 Index = 0; Index < MeshComp->GetNumMaterials(); ++Index)
+		{
+			if (UMaterialInstanceDynamic* Material = MeshComp->CreateAndSetMaterialInstanceDynamic(Index))
+			{
+				Material->SetVectorParameterValue(TEXT("Tint"), BodyTint);
+			}
+		}
+	}
+
 	if (UConquerAnimInstance* Locomotion = Cast<UConquerAnimInstance>(MeshComp->GetAnimInstance()))
 	{
-		auto LoadClip = [](const FSoftObjectPath& Path) { return Path.IsValid() ? Cast<UAnimSequence>(Path.TryLoad()) : nullptr; };
+		auto LoadClip = [this](const FSoftObjectPath& Path) { return Path.IsValid() ? LoadAnimation<UAnimSequence>(Path) : nullptr; };
 		Locomotion->Idle = LoadClip(IdleAnimPath);
 		Locomotion->Walk = LoadClip(WalkAnimPath);
 		Locomotion->Jog = LoadClip(JogAnimPath);
@@ -155,32 +167,7 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 
 void AConquerCharacterBase::ApplyPlaceholderAnimations()
 {
-	auto Load = [this](const FSoftObjectPath& Path)
-	{
-		// A local-only version of the montage (e.g. Mixamo's, which can't go in the public repo) wins when present.
-		for (const FString& Override : LocalAnimOverrides)
-		{
-			FString From, To;
-			if (Override.Split(TEXT("=>"), &From, &To) && Path.ToString().Contains(From))
-			{
-				const FSoftObjectPath Local(Path.ToString().Replace(*From, *To));
-				if (FPackageName::DoesPackageExist(Local.GetLongPackageName()))
-				{
-					if (UAnimMontage* Montage = Cast<UAnimMontage>(Local.TryLoad()))
-					{
-						return Montage;
-					}
-				}
-			}
-		}
-
-		UAnimMontage* Montage = Cast<UAnimMontage>(Path.TryLoad());
-		if (!Montage)
-		{
-			UE_LOG(LogConquer, Warning, TEXT("%s: animation %s not found. Run Tools/build_anims.py."), *GetName(), *Path.ToString());
-		}
-		return Montage;
-	};
+	auto Load = [this](const FSoftObjectPath& Path) { return LoadAnimation<UAnimMontage>(Path); };
 	auto Fill = [&Load](TObjectPtr<UAnimMontage>& Montage, const FSoftObjectPath& Path)
 	{
 		if (!Montage && Path.IsValid())
@@ -203,6 +190,9 @@ void AConquerCharacterBase::ApplyPlaceholderAnimations()
 	Fill(Combat->HeavyHitReactMontage, HeavyHitReactMontagePath);
 	Fill(Combat->GuardBrokenMontage, GuardBrokenMontagePath);
 	Fill(Combat->BlockMontage, BlockMontagePath);
+	Fill(Combat->ThrustAttack.MontageLeft, ThrustMontagePath);
+	Fill(Combat->ThrustAttack.MontageTop, ThrustMontagePath);
+	Fill(Combat->ThrustAttack.MontageRight, ThrustMontagePath);
 
 	if (DeathMontages.Num() == 0)
 	{
@@ -222,6 +212,33 @@ void AConquerCharacterBase::ApplyPlaceholderAnimations()
 	}
 }
 
+UObject* AConquerCharacterBase::LoadAnimationObject(const FSoftObjectPath& Path) const
+{
+	// A local-only version of the clip (e.g. Mixamo's, which can't go in the public repo) wins when present.
+	for (const FString& Override : LocalAnimOverrides)
+	{
+		FString From, To;
+		if (Override.Split(TEXT("=>"), &From, &To) && Path.ToString().Contains(From))
+		{
+			const FSoftObjectPath Local(Path.ToString().Replace(*From, *To));
+			if (FPackageName::DoesPackageExist(Local.GetLongPackageName()))
+			{
+				if (UObject* Asset = Local.TryLoad())
+				{
+					return Asset;
+				}
+			}
+		}
+	}
+
+	UObject* Asset = Path.TryLoad();
+	if (!Asset)
+	{
+		UE_LOG(LogConquer, Warning, TEXT("%s: animation %s not found. Run Tools/build_anims.py."), *GetName(), *Path.ToString());
+	}
+	return Asset;
+}
+
 bool AConquerCharacterBase::IsDead() const
 {
 	return Attributes && Attributes->IsDead();
@@ -236,6 +253,7 @@ void AConquerCharacterBase::Kill(AActor* Killer)
 {
 	if (!IsDead())
 	{
+		Attributes->MinHealth = 0.f;
 		Attributes->ApplyDamage(Attributes->Health, Killer);
 	}
 }

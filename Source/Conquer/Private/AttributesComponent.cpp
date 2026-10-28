@@ -35,8 +35,15 @@ bool UAttributesComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 		return false;
 	}
 
-	Health = FMath::Max(0.f, Health - Amount);
+	const bool bWasUp = Health > MinHealth;
+	Health = FMath::Max(MinHealth, Health - Amount);
 	OnDamaged.Broadcast(Amount, DamageCauser);
+
+	if (MinHealth > 0.f && bWasUp && Health <= MinHealth)
+	{
+		OnDowned.Broadcast(DamageCauser);
+		return false;
+	}
 
 	if (IsDead())
 	{

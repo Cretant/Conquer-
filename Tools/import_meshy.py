@@ -68,6 +68,16 @@ def make_master(sample):
         node.set_editor_property("parameter_name", param)
         node.set_editor_property("sampler_type", sampler)
         node.set_editor_property("texture", sample[param])
+        if param == "BaseColor":
+            # A tint (white by default) lets two characters share a model and still read differently.
+            tint = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -500, -200)
+            tint.set_editor_property("parameter_name", "Tint")
+            tint.set_editor_property("default_value", unreal.LinearColor(1, 1, 1, 1))
+            mul = mel.create_material_expression(mat, unreal.MaterialExpressionMultiply, -200, 0)
+            mel.connect_material_expressions(node, "RGB", mul, "A")
+            mel.connect_material_expressions(tint, "", mul, "B")
+            mel.connect_material_property(mul, "", prop)
+            continue
         mel.connect_material_property(node, output, prop)
     mel.recompile_material(mat)
     unreal.EditorAssetLibrary.save_asset(MASTER, only_if_is_dirty=False)

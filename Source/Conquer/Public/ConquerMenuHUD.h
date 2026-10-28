@@ -32,6 +32,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Menu")
 	FString PromptText;
 
+	/** The fights on offer, drawn near the bottom of the screen. */
+	UPROPERTY(EditAnywhere, Category = "Menu")
+	FString OptionsText = TEXT("1   The Arena          2   The Keep Hall: Sir Garrick Vane");
+
 	/** Seconds for one full fade out and back in. */
 	UPROPERTY(EditAnywhere, Category = "Menu")
 	float PulsePeriod = 2.4f;

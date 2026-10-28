@@ -63,6 +63,14 @@ void AConquerMenuHUD::DrawHUD()
 		}
 	}
 
+	if (!OptionsText.IsEmpty())
+	{
+		const float Scale = FMath::Max(1.f, H / 720.f) * 1.1f;
+		float TextW = 0.f, TextH = 0.f;
+		GetTextSize(OptionsText, TextW, TextH, nullptr, Scale);
+		DrawText(OptionsText, FLinearColor(0.92f, 0.86f, 0.78f, 0.85f), (W - TextW) * 0.5f, H * 0.93f - TextH * 0.5f, nullptr, Scale);
+	}
+
 	if (!PromptText.IsEmpty())
 	{
 		const float Scale = FMath::Max(1.f, H / 720.f) * 1.3f;

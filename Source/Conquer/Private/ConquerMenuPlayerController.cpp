@@ -7,6 +7,7 @@
 AConquerMenuPlayerController::AConquerMenuPlayerController()
 {
 	ArenaLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/Maps/Arena.Arena")));
+	KeepHallLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/Maps/KeepHall.KeepHall")));
 	bShowMouseCursor = false;
 }
 
@@ -30,6 +31,8 @@ void AConquerMenuPlayerController::OnAnyKey(FKey Key)
 	}
 
 	bStarting = true;
-	UE_LOG(LogConquer, Log, TEXT("Menu: %s pressed, opening %s"), *Key.ToString(), *ArenaLevel.ToString());
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, ArenaLevel);
+	const bool bKeepHall = Key == EKeys::Two || Key == EKeys::NumPadTwo;
+	const TSoftObjectPtr<UWorld>& Level = bKeepHall ? KeepHallLevel : ArenaLevel;
+	UE_LOG(LogConquer, Log, TEXT("Menu: %s pressed, opening %s"), *Key.ToString(), *Level.ToString());
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, Level);
 }

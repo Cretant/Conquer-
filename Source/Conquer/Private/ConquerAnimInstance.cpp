@@ -97,8 +97,10 @@ private:
 			Out.ResetToRefPose();
 			return;
 		}
+		// Extracting root motion locks the root to the reference pose (the clips' root tracks wander), and the
+		// characters ignore root motion anyway: movement is the capsule's.
 		FAnimationPoseData Data(Out);
-		Sequence->GetAnimationPose(Data, FAnimExtractContext(static_cast<double>(Time), false, {}, true));
+		Sequence->GetAnimationPose(Data, FAnimExtractContext(static_cast<double>(Time), true, {}, true));
 	}
 
 	void Blend(FPoseContext& One, FPoseContext& Two, float WeightOfOne, FPoseContext& Out)

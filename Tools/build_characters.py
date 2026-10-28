@@ -50,6 +50,19 @@ def make_ik_rig(name, mesh):
     return rig
 
 
+
+def ground_root_motion(ctrl):
+    """Root motion follows the pelvis along the floor: with the default (copy the source root, height and all) the
+    root rides at hip height, and once the characters lock it to the floor the body sinks into it."""
+    for i in range(ctrl.get_num_retarget_ops()):
+        if str(ctrl.get_op_name(i)) == "Root Motion":
+            op = ctrl.get_op_controller(i)
+            settings = op.get_settings()
+            settings.root_motion_source = unreal.RootMotionSource.GENERATE_FROM_TARGET_PELVIS
+            settings.root_height_source = unreal.RootMotionHeightSource.SNAP_TO_GROUND
+            op.set_settings(settings)
+
+
 def make_retargeter(name, source_rig, target_rig, source_mesh, target_mesh):
     rtg = tools.create_asset(name, RIGS, unreal.IKRetargeter, unreal.IKRetargetFactory())
     ctrl = unreal.IKRetargeterController.get_controller(rtg)
@@ -61,6 +74,7 @@ def make_retargeter(name, source_rig, target_rig, source_mesh, target_mesh):
     ctrl.assign_ik_rig_to_all_ops(unreal.RetargetSourceOrTarget.TARGET, target_rig)
     ctrl.auto_map_chains(unreal.AutoMapChainType.FUZZY, True)
     ctrl.auto_align_all_bones(unreal.RetargetSourceOrTarget.TARGET)
+    ground_root_motion(ctrl)
     assets.save_asset(rtg.get_path_name(), only_if_is_dirty=False)
     return rtg
 
@@ -141,6 +155,11 @@ source_rig = make_ik_rig("IK_Manny", source_mesh)
 abp = registry.get_asset_by_object_path(ABP + ".ABP_Unarmed")
 public_montages = montages_in(MONTAGES)
 mixamo_montages = montages_in(MIXAMO_MONTAGES)
+# Mixamo's sword-and-shield idle, walks, runs and strafes, for armed locomotion (see LocalAnimOverrides).
+MIXAMO_LOCOMOTION = ["Idle", "Block_Idle", "Walk", "Walk_2", "Run", "Run_2", "Strafe", "Strafe_2", "Strafe_3", "Strafe_4"]
+mixamo_locomotion = [registry.get_asset_by_object_path("%s/Clips/A_MX_%s.A_MX_%s" % (MIXAMO_MONTAGES, n, n))
+                     for n in MIXAMO_LOCOMOTION] if mixamo_montages else []
+mixamo_locomotion = [a for a in mixamo_locomotion if a.is_valid()]
 
 for name in NAMES:
     folder = CHARS + "/" + name
@@ -157,7 +176,8 @@ for name in NAMES:
     rtg = make_retargeter("RTG_Manny_To_" + name, source_rig, target_rig, source_mesh, mesh)
     suffix = "_" + name
     public = retarget([abp] + public_montages, source_mesh, mesh, rtg, folder + "/Anims", suffix)
-    mixamo = retarget(mixamo_montages, source_mesh, mesh, rtg, folder + "/Mixamo", suffix) if mixamo_montages else {}
+    mixamo = retarget(mixamo_montages + mixamo_locomotion, source_mesh, mesh, rtg, folder + "/Mixamo", suffix) \
+        if mixamo_montages else {}
     path = lambda n: public[n + suffix]
 
     # Fit the sword to the fist of the clips the game will actually use on this PC.

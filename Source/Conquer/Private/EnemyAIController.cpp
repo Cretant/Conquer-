@@ -77,18 +77,31 @@ void AEnemyAIController::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Offence: attack when in range, off cooldown and the squad has a free attack token.
+	// Offence: attack when off cooldown and free to swing.
 	AttackCooldown -= DeltaSeconds;
-	if (AttackCooldown > 0.f || Dist > Me->EngageRange + 60.f || !MyCombat->CanStartAttack())
+	if (AttackCooldown > 0.f || !MyCombat->CanStartAttack())
 	{
 		return;
+	}
+	if (TryAttack(Me, Target, MyCombat, Dist))
+	{
+		AttackCooldown = FMath::FRandRange(Me->AttackCooldownMin, Me->AttackCooldownMax);
+	}
+}
+
+bool AEnemyAIController::TryAttack(AEnemySoldier* Me, AConquerCharacterBase* Target, UCombatComponent* MyCombat, float Dist)
+{
+	// Soldiers attack when in range and the squad has a free attack token.
+	if (Dist > Me->EngageRange + 60.f)
+	{
+		return false;
 	}
 
 	AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
 	if (!Me->bIgnoresAttackTokens && GameMode && !GameMode->TryTakeAttackToken(Me))
 	{
 		AttackCooldown = 0.4f;
-		return;
+		return false;
 	}
 
 	EAttackKind Kind = EAttackKind::Light;
@@ -106,6 +119,5 @@ void AEnemyAIController::Tick(float DeltaSeconds)
 		? Me->AttackDirections[FMath::RandRange(0, Me->AttackDirections.Num() - 1)]
 		: EGuardDirection::Top;
 
-	MyCombat->StartAttack(Kind, Side);
-	AttackCooldown = FMath::FRandRange(Me->AttackCooldownMin, Me->AttackCooldownMax);
+	return MyCombat->StartAttack(Kind, Side);
 }

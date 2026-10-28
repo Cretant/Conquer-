@@ -99,9 +99,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
 	FAttackSpec GuardBreakAttack;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
+	FAttackSpec ThrustAttack;
+
 	/** Whether this character can block at all right now (the player only blocks while locked on). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
 	bool bGuardRaised = true;
+
+	/** Turtling: blocks blockable hits from every side, until a guard break or any stagger opens it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	bool bBlockAllDirections = false;
 
 	/** A heavy started this soon before an incoming hit, from the same side, parries it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")

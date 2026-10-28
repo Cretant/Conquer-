@@ -34,6 +34,14 @@ UCombatComponent::UCombatComponent()
 	GuardBreakAttack.StaminaCost = 12.f;
 	GuardBreakAttack.Range = 90.f;
 	GuardBreakAttack.ArcHalfAngle = 45.f;
+
+	ThrustAttack.Windup = 0.45f;
+	ThrustAttack.Active = 0.15f;
+	ThrustAttack.Recovery = 0.9f;
+	ThrustAttack.Damage = 30.f;
+	ThrustAttack.StaminaCost = 0.f;
+	ThrustAttack.Range = 200.f;
+	ThrustAttack.ArcHalfAngle = 35.f;
 }
 
 void UCombatComponent::BeginPlay()
@@ -53,6 +61,7 @@ const FAttackSpec& UCombatComponent::GetSpec(EAttackKind Kind) const
 	{
 	case EAttackKind::Heavy:      return HeavyAttack;
 	case EAttackKind::GuardBreak: return GuardBreakAttack;
+	case EAttackKind::Thrust:     return ThrustAttack;
 	default:                      return LightAttack;
 	}
 }
@@ -148,6 +157,7 @@ bool UCombatComponent::Dodge(const FVector& WorldDirection)
 void UCombatComponent::Stagger(float Seconds)
 {
 	CancelAttack();
+	bBlockAllDirections = false;
 	StaggerTimeLeft = FMath::Max(StaggerTimeLeft, Seconds);
 }
 
@@ -314,7 +324,7 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 	// Block: guard raised on the matching side and not mid-attack.
 	const bool bCanBlock = bGuardRaised && !bRaging && !IsStaggered()
 		&& (Phase == EAttackPhase::None || Phase == EAttackPhase::Recovery);
-	if (!bUnblockable && bCanBlock && GuardDirection == Direction)
+	if (!bUnblockable && bCanBlock && (GuardDirection == Direction || bBlockAllDirections))
 	{
 		OwnerCharacter->GetAttributes()->DrainStamina(BlockStaminaDrain);
 		PlayReaction(BlockMontage, 1.5f);

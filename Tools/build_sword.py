@@ -26,14 +26,17 @@ TARGET_MESH = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"
 # Pack -> (file under Art/, clip-name prefix on the retargeted clips, clips to retarget)
 PACKS = {
     "UAL1": ("Quaternius/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb", "",
-             ["Sword_Attack", "Sword_Idle", "Hit_Chest", "Hit_Head", "Death01", "Roll"]),
+             ["Sword_Attack", "Sword_Idle", "Hit_Chest", "Hit_Head", "Death01", "Roll", "Fixing_Kneeling"]),
     "UAL2": ("Quaternius/Universal Animation Library 2[Standard]/Unreal-Godot/UAL2_Standard.glb", "",
              ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C", "Sword_Heavy_Combo", "Sword_Block",
               "Sword_Dash", "Hit_Knockback", "Melee_Hook"]),
     # Mixamo's Sword And Shield Pack, merged into one GLB by Tools/merge_mixamo.py. Optional: skipped if absent.
     "Mixamo": ("Mixamo/SwordShield.glb", "MX_",
-               ["Slash", "Slash_3", "Attack_2", "Attack_4", "Kick", "Block", "Block_Idle", "Idle",
-                "Impact", "Impact_2", "Impact_3", "Death", "Death_2"]),
+               ["Slash", "Slash_3", "Attack_2", "Attack_3", "Attack_4", "Kick", "Block", "Block_Idle", "Idle",
+                "Impact", "Impact_2", "Impact_3", "Death", "Death_2", "Power_Up",
+                # Armed locomotion (forward/back walk and run, strafes: 1 walk right, 2 walk left, 3 run left,
+                # 4 run right), measured from the hips' travel in each clip.
+                "Walk", "Walk_2", "Run", "Run_2", "Strafe", "Strafe_2", "Strafe_3", "Strafe_4"]),
 }
 
 assets = unreal.EditorAssetLibrary
@@ -82,6 +85,19 @@ def make_ik_rig(name, mesh):
     return rig
 
 
+
+def ground_root_motion(ctrl):
+    """Root motion follows the pelvis along the floor: with the default (copy the source root, height and all) the
+    root rides at hip height, and once the characters lock it to the floor the body sinks into it."""
+    for i in range(ctrl.get_num_retarget_ops()):
+        if str(ctrl.get_op_name(i)) == "Root Motion":
+            op = ctrl.get_op_controller(i)
+            settings = op.get_settings()
+            settings.root_motion_source = unreal.RootMotionSource.GENERATE_FROM_TARGET_PELVIS
+            settings.root_height_source = unreal.RootMotionHeightSource.SNAP_TO_GROUND
+            op.set_settings(settings)
+
+
 def make_retargeter(name, source_rig, target_rig, source_mesh, target_mesh):
     path = RIGS + "/" + name
     rtg = tools.create_asset(name, RIGS, unreal.IKRetargeter, unreal.IKRetargetFactory())
@@ -95,6 +111,7 @@ def make_retargeter(name, source_rig, target_rig, source_mesh, target_mesh):
     ctrl.auto_map_chains(unreal.AutoMapChainType.FUZZY, True)
     # The UAL rig rests in a T-pose and the mannequin in an A-pose: line the target's bones up with the source's.
     ctrl.auto_align_all_bones(unreal.RetargetSourceOrTarget.TARGET)
+    ground_root_motion(ctrl)
     log("%s root settings: %s" % (name, ctrl.get_root_settings()))
     assets.save_asset(path, only_if_is_dirty=False)
     return rtg
