@@ -163,6 +163,32 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 		Locomotion->JogBack = LoadClip(JogBackAnimPath);
 		Locomotion->JogLeft = LoadClip(JogLeftAnimPath);
 		Locomotion->JogRight = LoadClip(JogRightAnimPath);
+
+		auto LoadAll = [this](const TArray<FSoftObjectPath>& Paths)
+		{
+			TArray<TObjectPtr<UAnimSequence>> Clips;
+			for (const FSoftObjectPath& Path : Paths)
+			{
+				Clips.Add(LoadOptionalClip(Path));
+			}
+			return Clips;
+		};
+		Locomotion->WalkDiagonals = LoadAll(WalkDiagonalAnimPaths);
+		Locomotion->JogDiagonals = LoadAll(JogDiagonalAnimPaths);
+		Locomotion->WalkStart = LoadOptionalClip(WalkStartAnimPath);
+		Locomotion->JogStart = LoadOptionalClip(JogStartAnimPath);
+		Locomotion->WalkStops = LoadAll(WalkStopAnimPaths);
+		Locomotion->JogStops = LoadAll(JogStopAnimPaths);
+		Locomotion->Turns = LoadAll(TurnAnimPaths);
+		Locomotion->IdleBreaks = LoadAll(IdleBreakAnimPaths);
+		Locomotion->IdleBreaks.RemoveAll([](const TObjectPtr<UAnimSequence>& Clip) { return Clip == nullptr; });
+
+		const bool bFullSet = Locomotion->WalkDiagonals.Num() == 4 && !Locomotion->WalkDiagonals.Contains(nullptr);
+		if (bFullSet && LocomotionWalkSpeed > 0.f && LocomotionJogSpeed > 0.f)
+		{
+			Locomotion->WalkSpeed = LocomotionWalkSpeed;
+			Locomotion->JogSpeed = LocomotionJogSpeed;
+		}
 	}
 }
 
@@ -242,6 +268,15 @@ UObject* AConquerCharacterBase::LoadAnimationObject(const FSoftObjectPath& Path)
 		UE_LOG(LogConquer, Warning, TEXT("%s: animation %s not found. Run Tools/build_anims.py."), *GetName(), *Path.ToString());
 	}
 	return Asset;
+}
+
+UAnimSequence* AConquerCharacterBase::LoadOptionalClip(const FSoftObjectPath& Path) const
+{
+	if (!Path.IsValid() || !FPackageName::DoesPackageExist(Path.GetLongPackageName()))
+	{
+		return nullptr;
+	}
+	return Cast<UAnimSequence>(Path.TryLoad());
 }
 
 bool AConquerCharacterBase::IsDead() const

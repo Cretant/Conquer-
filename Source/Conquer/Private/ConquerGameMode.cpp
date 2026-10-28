@@ -26,7 +26,7 @@ void AConquerGameMode::BeginPlay()
 
 #if !UE_BUILD_SHIPPING
 	// -ConquerCombatTest: the duel mechanics, run headless instead of the arena waves.
-	if (FParse::Param(FCommandLine::Get(), TEXT("ConquerCombatTest")))
+	if (FParse::Param(FCommandLine::Get(), TEXT("ConquerCombatTest")) || FParse::Param(FCommandLine::Get(), TEXT("ConquerMoveTest")))
 	{
 		bSpawnArenaWaves = false;
 		GetWorld()->SpawnActor<ACombatTestDriver>();

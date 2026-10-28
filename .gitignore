@@ -33,3 +33,4 @@ Content/Characters/Conquer/Retarget/
 # Prepared Meshy props (Tools/prep_props.py): rebuilt from the local Meshy downloads
 Art/Weapons/SM_Meshy*.fbx
 Art/Weapons/*.fbm/
+Content/Characters/Conquer/*/GASP/

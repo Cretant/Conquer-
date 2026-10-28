@@ -14,7 +14,9 @@ public class Conquer : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
-			"GameplayTasks"
+			"GameplayTasks",
+			"AnimationCore",
+			"ProceduralMeshComponent"
 		});
 	}
 }

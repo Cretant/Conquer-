@@ -9,12 +9,70 @@
 #include "ConquerGameMode.h"
 #include "Conquer.h"
 #include "AIController.h"
+#include "Camera/CameraActor.h"
+#include "GameFramework/HUD.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Misc/CommandLine.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 
 ACombatTestDriver::ACombatTestDriver()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	bMoveTest = FParse::Param(FCommandLine::Get(), TEXT("ConquerMoveTest"));
+}
+
+void ACombatTestDriver::TickMoveTest(float DeltaSeconds)
+{
+	const float Prev = MoveTime;
+	MoveTime += DeltaSeconds;
+	auto At = [&](float T) { return Prev < T && MoveTime >= T; };
+	auto During = [&](float From, float To) { return MoveTime >= From && MoveTime < To; };
+
+	if (At(0.1f))
+	{
+		// A camera beside her, following along her path (which runs along +X), no HUD.
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		FollowCamera = GetWorld()->SpawnActor<ACameraActor>(Wren->GetActorLocation() + FVector(0.f, -520.f, 60.f), FRotator(-4.f, 90.f, 0.f));
+		if (PC && FollowCamera)
+		{
+			PC->SetViewTarget(FollowCamera);
+			if (PC->MyHUD)
+			{
+				PC->MyHUD->bShowHUD = false;
+			}
+		}
+		UE_LOG(LogConquer, Log, TEXT("Move test: starting"));
+	}
+
+	if (FollowCamera)
+	{
+		const FVector Want = Wren->GetActorLocation() + FVector(0.f, -520.f, 60.f);
+		FollowCamera->SetActorLocation(FMath::VInterpTo(FollowCamera->GetActorLocation(), Want, DeltaSeconds, 4.f));
+	}
+
+	// Idle, set off and run, let go (a stop), a diagonal run, let go, then a sharp turn on the spot, then another.
+	if (During(1.0f, 2.6f)) { Wren->AddMovementInput(FVector(1.f, 0.f, 0.f), 1.f); }
+	// The diagonal is strafed, as locked on: she keeps facing ahead and the legs go forward-right.
+	if (At(3.9f)) { Wren->GetCharacterMovement()->bOrientRotationToMovement = false; }
+	if (During(4.0f, 5.2f)) { Wren->AddMovementInput(FVector(0.7f, 0.7f, 0.f), 1.f); }
+	if (At(6.2f)) { Wren->GetCharacterMovement()->bOrientRotationToMovement = true; }
+	if (At(6.6f)) { Wren->SetActorRotation(Wren->GetActorRotation() + FRotator(0.f, 110.f, 0.f)); UE_LOG(LogConquer, Log, TEXT("Move test: turn")); }
+	if (At(8.4f)) { Wren->SetActorRotation(Wren->GetActorRotation() + FRotator(0.f, -170.f, 0.f)); UE_LOG(LogConquer, Log, TEXT("Move test: turn back")); }
+
+	if (MoveTime >= 0.6f && MoveTime < 10.5f && MoveTime >= NextFrame)
+	{
+		NextFrame = MoveTime + 0.1f;
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			PC->ConsoleCommand(TEXT("shot"));
+			++Frames;
+		}
+	}
+	if (At(10.6f))
+	{
+		UE_LOG(LogConquer, Log, TEXT("Move test: done, %d frames"), Frames);
+	}
 }
 
 AEnemySoldier* ACombatTestDriver::Spawn(TSubclassOf<AEnemySoldier> Class, float Distance, bool bKeepAI)
@@ -113,6 +171,11 @@ void ACombatTestDriver::Tick(float DeltaSeconds)
 		Start = Wren->GetActorLocation();
 		Wren->GetAttributes()->MinHealth = 1.f;
 		Reset();
+	}
+	if (bMoveTest)
+	{
+		TickMoveTest(DeltaSeconds);
+		return;
 	}
 
 	const float Prev = StepTime;

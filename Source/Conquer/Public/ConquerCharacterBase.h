@@ -102,6 +102,24 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath JogLeftAnimPath;
 	UPROPERTY(Config) FSoftObjectPath JogRightAnimPath;
 
+	/**
+	 * The fuller locomotion set (UConquerAnimInstance): diagonals (forward-right, back-right, back-left, forward-left),
+	 * starts, stops (forward, right, back, left; each on the left then the right foot), turns on the spot (left 90,
+	 * right 90, left 180, right 180) and idle breaks. Local-only clips: missing ones are skipped quietly.
+	 */
+	UPROPERTY(Config) TArray<FSoftObjectPath> WalkDiagonalAnimPaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> JogDiagonalAnimPaths;
+	UPROPERTY(Config) FSoftObjectPath WalkStartAnimPath;
+	UPROPERTY(Config) FSoftObjectPath JogStartAnimPath;
+	UPROPERTY(Config) TArray<FSoftObjectPath> WalkStopAnimPaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> JogStopAnimPaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> TurnAnimPaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> IdleBreakAnimPaths;
+
+	/** The fuller set's walk and jog speeds (cm/s), used when its diagonals are present. */
+	UPROPERTY(Config) float LocomotionWalkSpeed = 0.f;
+	UPROPERTY(Config) float LocomotionJogSpeed = 0.f;
+
 	/** Placeholder weapon and where it sits relative to the hand bone. */
 	UPROPERTY(Config)
 	FSoftObjectPath WeaponMeshPath;
@@ -161,6 +179,9 @@ protected:
 
 private:
 	UObject* LoadAnimationObject(const FSoftObjectPath& Path) const;
+
+	/** Loads a local-only clip if it's on this PC; nothing (and no warning) if it isn't. */
+	UAnimSequence* LoadOptionalClip(const FSoftObjectPath& Path) const;
 	void ApplyPlaceholderBody();
 	void ApplyPlaceholderAnimations();
 };
