@@ -60,6 +60,7 @@ void AArcherSoldier::FireProjectile(const FAttackSpec& Spec)
 	{
 		Arrow->Launch(this, Spec, Velocity);
 	}
+	Combat->PlayReaction(ShotReleaseMontage);
 }
 
 bool AArcherAIController::TryAttack(AEnemySoldier* Me, AConquerCharacterBase* Target, UCombatComponent* MyCombat, float Dist)

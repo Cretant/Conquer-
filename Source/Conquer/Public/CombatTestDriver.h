@@ -13,6 +13,9 @@ class AWrenCharacter;
  * late block, guard break and its counter, dodge cancels, i-frames and the dodge attack, the shield guard, and an
  * archer's arrows deflected, dodged and taken. The enemies are puppets (no AI) except the archer.
  *
+ * -ConquerFightFilm stages a duel against a soldier with his AI on (a combo, a heavy, a dodge into a dash attack, parries of
+ * his swings, a guard break and an execution) and films it from the side for a preview video.
+ *
  * -ConquerMoveTest instead walks Wren through her locomotion (setting off, running, stopping, a diagonal, turning on
  * the spot) in front of a fixed side camera, saving a frame every tenth of a second for a preview video.
  */
@@ -32,6 +35,8 @@ private:
 	void Next();
 	void Check(const TCHAR* Name, bool bPass, const FString& Detail = FString());
 	void TickMoveTest(float DeltaSeconds);
+	void TickFightFilm(float DeltaSeconds);
+	void FilmFrame(float Every);
 	void Face(AActor* Actor, const AActor* Target) const;
 	void Shot(const TCHAR* Name);
 	EHitOutcome LastOutcome() const;
@@ -56,6 +61,8 @@ private:
 	int32 Failed = 0;
 
 	bool bMoveTest = false;
+	bool bFightFilm = false;
+	int32 LastParriedSerial = -1;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> FollowCamera;

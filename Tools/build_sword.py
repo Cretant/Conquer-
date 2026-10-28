@@ -26,13 +26,18 @@ TARGET_MESH = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"
 # Pack -> (file under Art/, clip-name prefix on the retargeted clips, clips to retarget)
 PACKS = {
     "UAL1": ("Quaternius/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb", "",
-             ["Sword_Attack", "Sword_Idle", "Hit_Chest", "Hit_Head", "Death01", "Roll", "Fixing_Kneeling"]),
+             ["Sword_Attack", "Sword_Idle", "Hit_Chest", "Hit_Head", "Death01", "Roll", "Fixing_Kneeling",
+              # Pitchfork thrusts (jabs), the archers' aim and loose, and the cutscene soldiers' torches.
+              "Punch_Jab", "Punch_Cross", "Pistol_Aim_Neutral", "Pistol_Shoot", "Idle_Torch_Loop"]),
     "UAL2": ("Quaternius/Universal Animation Library 2[Standard]/Unreal-Godot/UAL2_Standard.glb", "",
              ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C", "Sword_Heavy_Combo", "Sword_Block",
-              "Sword_Dash", "Hit_Knockback", "Melee_Hook"]),
+              "Sword_Dash", "Hit_Knockback", "Melee_Hook",
+              # Getting up off the ground (the opening), and a longer combo for executions.
+              "LayToIdle", "Sword_Regular_Combo"]),
     # Mixamo's Sword And Shield Pack, merged into one GLB by Tools/merge_mixamo.py. Optional: skipped if absent.
     "Mixamo": ("Mixamo/SwordShield.glb", "MX_",
-               ["Slash", "Slash_3", "Attack_2", "Attack_3", "Attack_4", "Kick", "Block", "Block_Idle", "Idle",
+               ["Slash", "Slash_2", "Slash_3", "Slash_4", "Slash_5", "Attack", "Attack_2", "Attack_3", "Attack_4",
+                "Kick", "Block", "Block_2", "Block_Idle", "Idle",
                 "Impact", "Impact_2", "Impact_3", "Death", "Death_2", "Power_Up",
                 # Armed locomotion (forward/back walk and run, strafes: 1 walk right, 2 walk left, 3 run left,
                 # 4 run right), measured from the hips' travel in each clip.

@@ -12,6 +12,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "Misc/CommandLine.h"
+#include "Misc/PackageName.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/SkeletalMeshActor.h"
+#include "Components/SkeletalMeshComponent.h"
 
 AMarrowfordGameMode::AMarrowfordGameMode()
 {
@@ -71,6 +75,10 @@ void AMarrowfordGameMode::Tick(float DeltaSeconds)
 		}
 		if (!Actor || Alpha >= 1.f)
 		{
+			if (Actor && Move.bIdleOnArrival)
+			{
+				PlayLoop(Actor, IntroIdleAnimPaths);
+			}
 			Moves.RemoveAt(i);
 		}
 	}
@@ -149,7 +157,7 @@ void AMarrowfordGameMode::RunIntroStep()
 			{
 				const FVector Home = IntroSoldierHomes[i];
 				const FVector Stop = FamilyCentre + (Home - FamilyCentre).GetSafeNormal2D() * (350.f + 120.f * i);
-				MoveActor(Soldier, FVector(Stop.X, Stop.Y, Home.Z), 8.5f);
+				RunTo(Soldier, FVector(Stop.X, Stop.Y, Home.Z));
 			}
 		}
 		Next = 4.f;
@@ -176,6 +184,7 @@ void AMarrowfordGameMode::RunIntroStep()
 			{
 				const FVector Around = Wren->GetActorLocation() + FRotator(0.f, 40.f + 110.f * i, 0.f).Vector() * 260.f;
 				Soldier->SetActorLocation(FVector(Around.X, Around.Y, IntroSoldierHomes[i].Z));
+				PlayLoop(Soldier, IntroIdleAnimPaths);
 			}
 		}
 		Next = 2.f;
@@ -188,7 +197,7 @@ void AMarrowfordGameMode::RunIntroStep()
 		{
 			if (AActor* Soldier = IntroSoldiers[i].Get())
 			{
-				MoveActor(Soldier, IntroSoldierHomes[i], 7.f);
+				RunTo(Soldier, IntroSoldierHomes[i]);
 			}
 		}
 		Next = 4.5f;
@@ -302,6 +311,37 @@ void AMarrowfordGameMode::MoveActor(AActor* Actor, const FVector& To, float Seco
 	if (!Dir.IsNearlyZero())
 	{
 		Actor->SetActorRotation(FRotator(0.f, Dir.Rotation().Yaw - 90.f, 0.f));
+	}
+}
+
+void AMarrowfordGameMode::RunTo(AActor* Soldier, const FVector& To)
+{
+	if (!Soldier)
+	{
+		return;
+	}
+	PlayLoop(Soldier, IntroRunAnimPaths);
+	MoveActor(Soldier, To, FVector::Dist2D(Soldier->GetActorLocation(), To) / FMath::Max(IntroRunSpeed, 1.f));
+	Moves.Last().bIdleOnArrival = true;
+}
+
+void AMarrowfordGameMode::PlayLoop(AActor* Figure, const TArray<FSoftObjectPath>& Paths)
+{
+	ASkeletalMeshActor* Body = Cast<ASkeletalMeshActor>(Figure);
+	if (!Body)
+	{
+		return;
+	}
+	for (const FSoftObjectPath& Path : Paths)
+	{
+		if (FPackageName::DoesPackageExist(Path.GetLongPackageName()))
+		{
+			if (UAnimSequence* Clip = Cast<UAnimSequence>(Path.TryLoad()))
+			{
+				Body->GetSkeletalMeshComponent()->PlayAnimation(Clip, true);
+				return;
+			}
+		}
 	}
 }
 

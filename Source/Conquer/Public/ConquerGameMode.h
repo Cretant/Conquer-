@@ -6,6 +6,9 @@
 #include "ConquerGameMode.generated.h"
 
 class AEnemySoldier;
+class AConquerCharacterBase;
+class USoundBase;
+class UMaterialInterface;
 class AWrenCharacter;
 class ALevelTriggerVolume;
 enum class EPickupKind : uint8;
@@ -14,7 +17,7 @@ enum class EPickupKind : uint8;
  * Runs the prototype arena: a wave of soldiers, then the gate captain once they are all dead.
  * Also limits how many enemies may attack Wren at once so group fights stay readable.
  */
-UCLASS()
+UCLASS(Config = Game)
 class CONQUER_API AConquerGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
@@ -70,14 +73,23 @@ public:
 	/** An enemy just entered the fight: the first of each kind brings its hint. */
 	void NotifyEnemySpawned(AEnemySoldier* Enemy);
 
-	/** Freezes the world for a moment of real time so a big hit lands. */
-	void HitStop(float RealSeconds);
+	/** Freezes the two fighters (not the world) for a moment so a big hit lands. */
+	void HitStop(float Seconds, AActor* One, AActor* Two = nullptr);
 
 	/** Washes the screen with a colour (its alpha is the strength), fading out over Seconds. */
 	void Flash(const FLinearColor& Color, float Seconds);
 
 	/** A word in the middle of the screen for a moment: PARRIED, GUARD BROKEN... */
 	void ShowCallout(const FString& Text);
+
+	/** Sparks, sounds and camera kicks for a blow's outcome. */
+	void PlayCombatEffects(EHitOutcome Outcome, EAttackKind Kind, AConquerCharacterBase* Attacker, AConquerCharacterBase* Defender);
+
+	/** The whoosh of a swing as it comes through. */
+	void PlaySwing(AActor* Swinger, EAttackKind Kind);
+
+	/** Sparks at a point, sprayed along a direction. */
+	void SpawnSparks(const FVector& Where, const FVector& Direction, float Strength, const FLinearColor& LightColor);
 
 	const FString& GetCallout() const { return Callout; }
 	float GetCalloutAlpha() const;
@@ -123,12 +135,26 @@ private:
 	TArray<float> PendingShotTimes;
 	FTimerHandle ShotTimer;
 
+	/** Tools/build_fx.py: synthesised combat sounds and the spark material. */
+	UPROPERTY(Config) FSoftObjectPath SwingSoundPath;
+	UPROPERTY(Config) FSoftObjectPath HeavySwingSoundPath;
+	UPROPERTY(Config) FSoftObjectPath HitSoundPath;
+	UPROPERTY(Config) FSoftObjectPath BlockSoundPath;
+	UPROPERTY(Config) FSoftObjectPath ParrySoundPath;
+	UPROPERTY(Config) FSoftObjectPath ThudSoundPath;
+	UPROPERTY(Config) FSoftObjectPath SparkMaterialPath;
+	USoundBase* LoadSound(const FSoftObjectPath& Path);
+	UPROPERTY(Transient) TMap<FString, TObjectPtr<USoundBase>> Sounds;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInterface> SparkMaterial;
+
 	float MessageAlpha(float Start, float End) const;
 	void ShowNextHint();
 	TArray<TPair<FString, float>> PendingHints;
 	TSet<FName> HintsShown;
 	FTimerHandle HintTimer;
 	FTimerHandle HitStopTimer;
+	void EndHitStop();
+	TMap<TWeakObjectPtr<AActor>, float> Frozen;
 	FString Callout;
 	float CalloutStart = -100.f;
 	FLinearColor FlashColor = FLinearColor::Transparent;

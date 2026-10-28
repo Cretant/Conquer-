@@ -15,7 +15,7 @@ class AEncounterVolume;
  * The level (Tools/build_marrowford.py) tags what the opening needs: IntroCam1 to IntroCam5, Family,
  * IntroSoldier (with an IntroTorch each), FarmFire (shown once the farm burns) and PitchforkProp.
  */
-UCLASS()
+UCLASS(Config = Game)
 class CONQUER_API AMarrowfordGameMode : public AConquerGameMode
 {
 	GENERATED_BODY()
@@ -39,6 +39,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marrowford")
 	TSoftObjectPtr<UWorld> MenuLevel;
 
+	/** The opening's soldiers: running (the first of these on this PC) and standing with their torches. */
+	UPROPERTY(Config) TArray<FSoftObjectPath> IntroRunAnimPaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> IntroIdleAnimPaths;
+
+	/** The pace the run clip covers ground at (cm/s), so their feet don't slide. */
+	UPROPERTY(Config) float IntroRunSpeed = 420.f;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -51,6 +58,8 @@ private:
 	void ViewFrom(FName CameraTag);
 	void FadeTo(float Target, float Seconds);
 	void MoveActor(AActor* Actor, const FVector& To, float Seconds);
+	void RunTo(AActor* Soldier, const FVector& To);
+	void PlayLoop(AActor* Figure, const TArray<FSoftObjectPath>& Paths);
 	TArray<AActor*> Tagged(FName Tag) const;
 	void SetShown(const TArray<AActor*>& Actors, bool bShown);
 
@@ -78,6 +87,7 @@ private:
 		FVector From, To;
 		float Start = 0.f;
 		float Duration = 1.f;
+		bool bIdleOnArrival = false;
 	};
 	TArray<FMove> Moves;
 	float FadeFrom = 0.f, FadeTarget = 0.f, FadeStart = 0.f, FadeDuration = 0.f;

@@ -3,6 +3,7 @@
 #include "AttributesComponent.h"
 #include "RageComponent.h"
 #include "ConquerGameMode.h"
+#include "ConquerHitNotify.h"
 #include "Conquer.h"
 #include "EngineUtils.h"
 #include "DrawDebugHelpers.h"
@@ -151,10 +152,17 @@ bool UCombatComponent::StartAttack(EAttackKind Kind, EGuardDirection Direction)
 		OwnerCharacter->LaunchCharacter(OwnerCharacter->GetActorForwardVector().GetSafeNormal2D() * DodgeAttackLunge, true, false);
 	}
 
+	// A combo carries on from an attack still recovering, or one that ended a moment ago.
+	if (Phase == EAttackPhase::None && GetWorld()->GetTimeSeconds() - LastAttackEndTime > ComboResetTime)
+	{
+		ComboStep = 0;
+	}
+
 	StopAttackMontage();
 	AttackKind = Kind;
 	AttackDirection = Direction;
 	AttackStartTime = GetWorld()->GetTimeSeconds();
+	LungeTarget = Kind != EAttackKind::Shot && LungeRange > 0.f ? FindLungeTarget() : nullptr;
 	++AttackSerial;
 	EnterPhase(EAttackPhase::Windup);
 	PlayAttackMontage();
@@ -242,9 +250,16 @@ void UCombatComponent::EnterPhase(EAttackPhase NewPhase)
 	switch (NewPhase)
 	{
 	case EAttackPhase::Windup:   PhaseTimeLeft = Spec.Windup; break;
-	case EAttackPhase::Active:   PhaseTimeLeft = Spec.Active; ResolveActiveFrame(); break;
+	case EAttackPhase::Active:
+		PhaseTimeLeft = Spec.Active;
+		if (AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>())
+		{
+			GameMode->PlaySwing(OwnerCharacter, AttackKind);
+		}
+		ResolveActiveFrame();
+		break;
 	case EAttackPhase::Recovery: PhaseTimeLeft = Spec.Recovery; break;
-	default:                     PhaseTimeLeft = 0.f; break;
+	default:                     PhaseTimeLeft = 0.f; LastAttackEndTime = GetWorld()->GetTimeSeconds(); break;
 	}
 }
 
@@ -256,6 +271,8 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	DodgeTimeLeft = FMath::Max(0.f, DodgeTimeLeft - DeltaTime);
 	InvulnerableTimeLeft = FMath::Max(0.f, InvulnerableTimeLeft - DeltaTime);
 	DodgeAttackWindowLeft = FMath::Max(0.f, DodgeAttackWindowLeft - DeltaTime);
+
+	UpdateLunge(DeltaTime);
 
 	if (Phase != EAttackPhase::None)
 	{
@@ -354,6 +371,10 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		return EHitOutcome::Ignored;
 	}
 
+	if (OwnerCharacter->IsUntouchable())
+	{
+		return EHitOutcome::Ignored;
+	}
 	if (IsInvulnerable())
 	{
 		return Report(Attacker, Kind, EHitOutcome::Dodged);
@@ -397,8 +418,9 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		{
 			UCombatComponent* TheirCombat = Attacker->GetCombat();
 			TheirCombat->Stagger(TheirCombat->ParriedStaggerTime);
-			TheirCombat->PlayReaction(TheirCombat->GuardBrokenMontage);
+			TheirCombat->PlayReaction(TheirCombat->ParriedRecoilMontage ? TheirCombat->ParriedRecoilMontage.Get() : TheirCombat->GuardBrokenMontage.Get());
 		}
+		PlayReaction(ParryMontage ? ParryMontage.Get() : BlockMontage.Get(), 1.4f);
 		if (URageComponent* Rage = OwnerCharacter->GetRage())
 		{
 			Rage->AddRage(ParryRage);
@@ -428,12 +450,28 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		return Report(Attacker, Kind, EHitOutcome::Blocked);
 	}
 
+	// The way the blow travels: from the attacker through the defender.
+	const FVector Along = Attacker ? (OwnerCharacter->GetActorLocation() - Attacker->GetActorLocation()).GetSafeNormal2D() : -OwnerCharacter->GetActorForwardVector();
+	const bool bBig = Kind == EAttackKind::Heavy || Kind == EAttackKind::Thrust || Kind == EAttackKind::DodgeAttack || bForceUnblockable;
+
+	// A killing blow from something big throws the body; anything else plays a death.
+	OwnerCharacter->DeathImpulse = bBig ? Along * 700.f + FVector(0.f, 0.f, 250.f) : FVector::ZeroVector;
 	const float Damage = Spec.Damage * DamageMultiplier;
 	OwnerCharacter->GetAttributes()->ApplyDamage(Damage, Attacker);
 	if (!OwnerCharacter->IsDead() && !bHyperArmor && !bRaging)
 	{
 		Stagger(Kind == EAttackKind::Heavy ? HitStaggerTime * 1.6f : HitStaggerTime);
 		PlayReaction(Kind == EAttackKind::Heavy ? HeavyHitReactMontage : HitReactMontage);
+		// The flinch goes the way the blow went: physics knocks the upper body, and a heavy shoves him back a step.
+		OwnerCharacter->PlayPhysicalHit(Along, bBig ? 450.f : 220.f);
+		if (bBig)
+		{
+			OwnerCharacter->LaunchCharacter(Along * 380.f, true, false);
+		}
+	}
+	else if (!OwnerCharacter->IsDead())
+	{
+		OwnerCharacter->PlayPhysicalHit(Along, 160.f);
 	}
 	return Report(Attacker, Kind, EHitOutcome::Hit);
 }
@@ -443,6 +481,10 @@ EHitOutcome UCombatComponent::Report(AConquerCharacterBase* Attacker, EAttackKin
 	const bool bPlayerDefends = OwnerCharacter && OwnerCharacter->IsPlayerTeam();
 	const bool bPlayerAttacks = Attacker && Attacker->IsPlayerTeam();
 	AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
+	if (GameMode)
+	{
+		GameMode->PlayCombatEffects(Outcome, Kind, Attacker, OwnerCharacter);
+	}
 	if (!GameMode || (!bPlayerDefends && !bPlayerAttacks))
 	{
 		return Outcome;
@@ -456,7 +498,7 @@ EHitOutcome UCombatComponent::Report(AConquerCharacterBase* Attacker, EAttackKin
 	switch (Outcome)
 	{
 	case EHitOutcome::Parried:
-		GameMode->HitStop(0.14f);
+		GameMode->HitStop(0.14f, OwnerCharacter, Attacker);
 		GameMode->Flash(FLinearColor(1.f, 0.82f, 0.4f, 0.3f), 0.25f);
 		GameMode->ShowCallout(Kind == EAttackKind::Shot ? TEXT("DEFLECTED") : TEXT("PARRIED"));
 		GameMode->ShowFirstTimeHint(TEXT("Parried"), Kind == EAttackKind::Shot
@@ -464,13 +506,13 @@ EHitOutcome UCombatComponent::Report(AConquerCharacterBase* Attacker, EAttackKin
 			: TEXT("Parried: he reels. Punish him now"));
 		break;
 	case EHitOutcome::Countered:
-		GameMode->HitStop(0.12f);
+		GameMode->HitStop(0.12f, OwnerCharacter, Attacker);
 		GameMode->Flash(FLinearColor(0.4f, 0.8f, 1.f, 0.25f), 0.25f);
 		GameMode->ShowCallout(TEXT("COUNTERED"));
 		GameMode->ShowFirstTimeHint(TEXT("Countered"), TEXT("Countered his guard break: he's open"));
 		break;
 	case EHitOutcome::GuardBroken:
-		GameMode->HitStop(0.08f);
+		GameMode->HitStop(0.08f, OwnerCharacter, Attacker);
 		if (bPlayerAttacks)
 		{
 			GameMode->ShowCallout(TEXT("GUARD BROKEN"));
@@ -496,7 +538,7 @@ EHitOutcome UCombatComponent::Report(AConquerCharacterBase* Attacker, EAttackKin
 	case EHitOutcome::Hit:
 		if (bPlayerAttacks && (Kind == EAttackKind::Heavy || Kind == EAttackKind::DodgeAttack))
 		{
-			GameMode->HitStop(0.06f);
+			GameMode->HitStop(0.06f, OwnerCharacter, Attacker);
 		}
 		break;
 	default:
@@ -516,11 +558,89 @@ void UCombatComponent::PlayAttackMontage()
 	default:                     Montage = Spec.MontageTop; break;
 	}
 
+	// Out of lock-on, a string of lights (or heavies) walks through the combo.
+	const TArray<TObjectPtr<UAnimMontage>>& Combo = AttackKind == EAttackKind::Heavy ? HeavyCombo : LightCombo;
+	if (bUseCombos && (AttackKind == EAttackKind::Light || AttackKind == EAttackKind::Heavy) && Combo.Num() > 0)
+	{
+		Montage = Combo[ComboStep % Combo.Num()];
+		++ComboStep;
+	}
+
 	USkeletalMeshComponent* Mesh = OwnerCharacter ? OwnerCharacter->GetMesh() : nullptr;
 	UAnimInstance* Anim = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	CurrentHitTime = UConquerHitNotify::FindHitTime(Montage);
 	if (Montage && Anim && Spec.TotalTime() > 0.f)
 	{
-		Anim->Montage_Play(Montage, Montage->GetPlayLength() / Spec.TotalTime());
+		// With a contact frame, play so it lands as the blow resolves: sped up a little at most, and a long wind-up
+		// trimmed from the front. Without one, fit the whole montage to the attack.
+		if (CurrentHitTime > 0.f && Spec.Windup > 0.f)
+		{
+			const float Rate = FMath::Clamp(CurrentHitTime / Spec.Windup, 0.6f, 1.6f);
+			const float StartAt = FMath::Max(0.f, CurrentHitTime - Spec.Windup * Rate);
+			Anim->Montage_Play(Montage, Rate, EMontagePlayReturnType::MontageLength, StartAt);
+		}
+		else
+		{
+			Anim->Montage_Play(Montage, Montage->GetPlayLength() / Spec.TotalTime());
+		}
+	}
+}
+
+bool UCombatComponent::IsInStrikeWindow() const
+{
+	return (Phase == EAttackPhase::Windup && PhaseTimeLeft < 0.15f) || Phase == EAttackPhase::Active;
+}
+
+AConquerCharacterBase* UCombatComponent::FindLungeTarget() const
+{
+	// The locked target if there is one in range, otherwise whoever is nearest in front.
+	AConquerCharacterBase* Best = nullptr;
+	float BestScore = BIG_NUMBER;
+	const FVector Origin = OwnerCharacter->GetActorLocation();
+	const FVector Forward = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
+	for (TActorIterator<AConquerCharacterBase> It(GetWorld()); It; ++It)
+	{
+		AConquerCharacterBase* Other = *It;
+		if (Other == OwnerCharacter || Other->IsDead() || Other->IsPlayerTeam() == OwnerCharacter->IsPlayerTeam())
+		{
+			continue;
+		}
+		const FVector To = (Other->GetActorLocation() - Origin) * FVector(1.f, 1.f, 0.f);
+		const float Gap = To.Size() - Other->GetCapsuleRadius() - OwnerCharacter->GetCapsuleRadius();
+		const float Facing = FVector::DotProduct(Forward, To.GetSafeNormal());
+		if (Gap > LungeRange || Facing < 0.5f)
+		{
+			continue;
+		}
+		const float Score = Gap * (2.f - Facing);
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			Best = Other;
+		}
+	}
+	return Best;
+}
+
+void UCombatComponent::UpdateLunge(float DeltaTime)
+{
+	AConquerCharacterBase* Target = LungeTarget.Get();
+	if (!Target || Target->IsDead() || (Phase != EAttackPhase::Windup && Phase != EAttackPhase::Active) || !OwnerCharacter)
+	{
+		LungeTarget = nullptr;
+		return;
+	}
+
+	// Slide in to where the blow lands at the middle of its reach, facing the target; never back off.
+	const FVector Origin = OwnerCharacter->GetActorLocation();
+	FVector To = Target->GetActorLocation() - Origin;
+	To.Z = 0.f;
+	const float Want = OwnerCharacter->GetCapsuleRadius() + Target->GetCapsuleRadius() + GetSpec(AttackKind).Range * 0.5f;
+	const float Remaining = To.Size() - Want;
+	OwnerCharacter->SetActorRotation(FRotator(0.f, To.Rotation().Yaw, 0.f));
+	if (Remaining > 2.f)
+	{
+		OwnerCharacter->AddActorWorldOffset(To.GetSafeNormal() * FMath::Min(Remaining, LungeSpeed * DeltaTime), true);
 	}
 }
 

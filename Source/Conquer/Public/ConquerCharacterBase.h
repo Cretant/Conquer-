@@ -10,6 +10,8 @@ class UAttributesComponent;
 class URageComponent;
 class UAnimMontage;
 class UStaticMeshComponent;
+class UWeaponTrailComponent;
+class UPhysicalAnimationComponent;
 
 /** Shared base for Wren and every enemy: health, stamina, the duel system and death. */
 UCLASS(Abstract, Config = Game)
@@ -41,6 +43,25 @@ public:
 	/** Ranged attacks: called on the active frame of a Shot. Archers loose an arrow. */
 	virtual void FireProjectile(const FAttackSpec& Spec) {}
 
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** A blow lands: the upper body is knocked along Direction by physics, then pulled back to the animation. */
+	void PlayPhysicalHit(const FVector& Direction, float Strength);
+
+	/** If the next blow kills, the body goes limp and is thrown this way (velocity, cm/s) instead of a death animation. */
+	FVector DeathImpulse = FVector::ZeroVector;
+
+	/** Something big happened to this character in a fight (the player's camera kicks). */
+	virtual void OnCombatImpact(float Strength) {}
+
+	/** Blows pass through her while true (mid-execution). */
+	virtual bool IsUntouchable() const { return false; }
+
+	UStaticMeshComponent* GetWeapon() const { return Weapon; }
+
+	/** A one-off montage over whatever she is doing (executions, cutscenes). */
+	float PlayMontage(UAnimMontage* Montage, float Rate = 1.f);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -66,6 +87,20 @@ protected:
 	/** The shield on the left arm, for characters that carry one. Also purely visual. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> Shield;
+
+	/** The blade's trail through each swing. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UWeaponTrailComponent> Trail;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPhysicalAnimationComponent> PhysicalAnimation;
+
+	UPROPERTY(Config) FSoftObjectPath TrailMaterialPath;
+
+	/** Hits knock the body about with physics (from this bone down), fading back to the animation. */
+	UPROPERTY(Config) bool bPhysicalHitReactions = true;
+
+	UPROPERTY(Config) FName PhysicalHitBone = TEXT("spine_01");
 
 	/** Placeholder body, set in DefaultGame.ini so it can change without recompiling. */
 	UPROPERTY(Config)
@@ -163,6 +198,26 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath ThrustMontagePath;
 	UPROPERTY(Config) TArray<FSoftObjectPath> DeathMontagePaths;
 
+	/** The fuller moveset (Tools/build_anims.py): combos, parry and recoil, the dodge attack, and per-character extras. */
+	UPROPERTY(Config) TArray<FSoftObjectPath> LightComboMontagePaths;
+	UPROPERTY(Config) TArray<FSoftObjectPath> HeavyComboMontagePaths;
+	UPROPERTY(Config) FSoftObjectPath ParryMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ParriedRecoilMontagePath;
+	UPROPERTY(Config) FSoftObjectPath DodgeAttackMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ShotMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ShotReleaseMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ThrustLightMontagePath;
+	UPROPERTY(Config) FSoftObjectPath ThrustHeavyMontagePath;
+	UPROPERTY(Config) FSoftObjectPath GetUpMontagePath;
+
+	/** Attacks slide in to a target this far off (UCombatComponent::LungeRange). */
+	UPROPERTY(Config) float LungeRange = 0.f;
+
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ShotReleaseMontage;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ThrustLightMontage;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ThrustHeavyMontage;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> GetUpMontage;
+
 	/** "From=>To" path rewrites tried before each montage path; the rewritten montage is used if it exists locally. */
 	UPROPERTY(Config) TArray<FString> LocalAnimOverrides;
 
@@ -184,4 +239,6 @@ private:
 	UAnimSequence* LoadOptionalClip(const FSoftObjectPath& Path) const;
 	void ApplyPlaceholderBody();
 	void ApplyPlaceholderAnimations();
+	void UpdatePhysicalHit(float DeltaSeconds);
+	float PhysicalHitWeight = 0.f;
 };

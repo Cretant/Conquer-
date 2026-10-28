@@ -55,6 +55,18 @@ public:
 	/** Starts a dodge as the dodge button does (towards her movement input, or backwards). */
 	bool TryDodge();
 
+	virtual void OnCombatImpact(float Strength) override;
+
+	/** Whether a heavy now would execute this enemy (staggered, wounded, close). */
+	bool CanExecute(const AConquerCharacterBase* Target) const;
+
+	/** Executes the best target in reach, if any: the paired finisher with its own camera. */
+	bool TryExecute();
+
+	bool IsExecuting() const { return ExecutionTarget != nullptr; }
+
+	virtual bool IsUntouchable() const override { return IsExecuting(); }
+
 	/** Shows or hides the weapon in her hand (the opening starts her empty-handed). */
 	void ShowWeapon(bool bShow);
 
@@ -125,7 +137,9 @@ private:
 	void HandleRageChanged(bool bActive);
 
 	void Attack(EAttackKind Kind);
-	bool TryExecute();
+	void StartExecution(AConquerCharacterBase* Target);
+	void UpdateExecution(float DeltaSeconds);
+	void FinishExecution();
 	AConquerCharacterBase* FindBestTarget(float MaxRange) const;
 	void SetLockTarget(AConquerCharacterBase* NewTarget);
 	void UpdateMovementMode();
@@ -162,7 +176,26 @@ private:
 	TObjectPtr<UStaticMesh> SwordMesh;
 
 	FAttackSpec SwordLight, SwordHeavy, SwordGuardBreak;
+	TArray<TObjectPtr<UAnimMontage>> SwordLightCombo, SwordHeavyCombo;
 	bool bPitchforkEquipped = false;
+
+	// The camera kick: a shake and a punch of the field of view, fading out.
+	float CameraKick = 0.f;
+	float BaseFieldOfView = 90.f;
+
+	// An execution in progress: who, which finisher, how far in, and its camera.
+	UPROPERTY(Transient)
+	TObjectPtr<AConquerCharacterBase> ExecutionTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> ExecutionCamera;
+
+	int32 ExecutionVariant = 0;
+	float ExecutionTime = 0.f;
+	float ExecutionKillAt = 1.f;
+	float ExecutionEndAt = 1.8f;
+	TArray<float> ExecutionBlows;
+	int32 ExecutionBlowsDone = 0;
 	bool bGuardHeld = false;
 	float DamageBonus = 1.f;
 

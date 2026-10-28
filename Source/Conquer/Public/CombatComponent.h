@@ -96,6 +96,9 @@ public:
 	/** Which of the defender's sides a blow or arrow from this location arrives on. */
 	static EGuardDirection SideFrom(const AActor* Defender, const FVector& FromLocation);
 
+	/** From just before the contact frame to the end of the active phase: when the weapon trail shows. */
+	bool IsInStrikeWindow() const;
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool CanStartAttack() const;
 
@@ -216,6 +219,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
 	TObjectPtr<UAnimMontage> BlockMontage;
 
+	/** Out of lock-on each light (or heavy) plays the next of these, so a string of attacks flows as a combo. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TArray<TObjectPtr<UAnimMontage>> LightCombo;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TArray<TObjectPtr<UAnimMontage>> HeavyCombo;
+
+	/** Set while the combos apply (the player, out of lock-on). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	bool bUseCombos = false;
+
+	/** A combo starts over once this long has passed since the last attack ended. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	float ComboResetTime = 0.6f;
+
+	/** The defender's deflection when she parries. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> ParryMontage;
+
+	/** The attacker knocked back when his blow is parried. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> ParriedRecoilMontage;
+
+	/** Attacks close the gap to a target this far off (from capsule to capsule), sliding up to LungeSpeed. 0: off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Lunge")
+	float LungeRange = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Lunge")
+	float LungeSpeed = 1100.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
 	bool bDrawDebug = false;
 
@@ -230,6 +263,8 @@ private:
 	void ResolveActiveFrame();
 	void CancelAttack();
 	void PlayAttackMontage();
+	void UpdateLunge(float DeltaTime);
+	AConquerCharacterBase* FindLungeTarget() const;
 	void StopAttackMontage();
 
 	AConquerCharacterBase* GetOwnerCharacter() const;
@@ -253,4 +288,9 @@ private:
 	float InvulnerableTimeLeft = 0.f;
 	float DodgeAttackWindowLeft = 0.f;
 	float LastGuardInputTime = -100.f;
+
+	int32 ComboStep = 0;
+	float LastAttackEndTime = -100.f;
+	float CurrentHitTime = -1.f;
+	TWeakObjectPtr<AConquerCharacterBase> LungeTarget;
 };

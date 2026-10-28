@@ -10,6 +10,7 @@
 #include "Conquer.h"
 #include "AIController.h"
 #include "Camera/CameraActor.h"
+#include "AttributesComponent.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/CommandLine.h"
@@ -20,6 +21,99 @@ ACombatTestDriver::ACombatTestDriver()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bMoveTest = FParse::Param(FCommandLine::Get(), TEXT("ConquerMoveTest"));
+	bFightFilm = FParse::Param(FCommandLine::Get(), TEXT("ConquerFightFilm"));
+}
+
+void ACombatTestDriver::FilmFrame(float Every)
+{
+	if (MoveTime >= NextFrame)
+	{
+		NextFrame = MoveTime + Every;
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			PC->ConsoleCommand(TEXT("shot"));
+			++Frames;
+		}
+	}
+}
+
+void ACombatTestDriver::TickFightFilm(float DeltaSeconds)
+{
+	const float Prev = MoveTime;
+	MoveTime += DeltaSeconds;
+	auto At = [&](float T) { return Prev < T && MoveTime >= T; };
+	UCombatComponent* Combat = Wren->GetCombat();
+
+	if (At(0.1f))
+	{
+		Dummy = Spawn(AEnemySoldier::StaticClass(), 260.f, true);
+		Dummy->GetAttributes()->MaxHealth = 400.f;
+		Dummy->GetAttributes()->Heal(400.f);
+		Face(Wren, Dummy);
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		const FVector Mid = (Wren->GetActorLocation() + Dummy->GetActorLocation()) * 0.5f;
+		const FVector Eye = Mid + FVector(-60.f, -480.f, 70.f);
+		FollowCamera = GetWorld()->SpawnActor<ACameraActor>(Eye, (Mid - Eye).Rotation());
+		if (PC && FollowCamera)
+		{
+			PC->SetViewTarget(FollowCamera);
+			if (PC->MyHUD)
+			{
+				PC->MyHUD->bShowHUD = false;
+			}
+		}
+		UE_LOG(LogConquer, Log, TEXT("Fight film: starting"));
+	}
+	if (!Dummy)
+	{
+		return;
+	}
+	if (FollowCamera && !Wren->IsExecuting())
+	{
+		// Keep both in frame from the side.
+		const FVector Mid = (Wren->GetActorLocation() + Dummy->GetActorLocation()) * 0.5f;
+		const FVector Want = Mid + FVector(-60.f, -480.f, 70.f);
+		FollowCamera->SetActorLocation(FMath::VInterpTo(FollowCamera->GetActorLocation(), Want, DeltaSeconds, 3.f));
+		FollowCamera->SetActorRotation((Mid - FollowCamera->GetActorLocation()).Rotation());
+	}
+
+	// Whenever he swings, she parries it (guard 0.1 s before it lands), unless she is busy attacking.
+	UCombatComponent* His = Dummy->GetCombat();
+	if (!Dummy->IsDead() && His->GetPhase() == EAttackPhase::Windup && His->GetAttackSerial() != LastParriedSerial
+		&& His->GetAttackKind() != EAttackKind::GuardBreak && MoveTime > 1.f)
+	{
+		const float Elapsed = GetWorld()->GetTimeSeconds() - His->GetAttackStartTime();
+		if (Elapsed >= His->GetSpec(His->GetAttackKind()).Windup - 0.1f && !Combat->IsBusy())
+		{
+			LastParriedSerial = His->GetAttackSerial();
+			Wren->SetGuardHeld(true);
+			Wren->SetGuardHeld(false);
+		}
+	}
+
+	// Her side of it.
+	auto Light = [&]() { Face(Wren, Dummy); Combat->StartAttack(Combat->CanDodgeAttack() ? EAttackKind::DodgeAttack : EAttackKind::Light, EGuardDirection::Right); };
+	if (At(1.2f) || At(1.65f) || At(2.1f)) { Light(); }
+	if (At(3.4f)) { Face(Wren, Dummy); Combat->StartAttack(EAttackKind::Heavy, EGuardDirection::Top); }
+	if (At(5.0f)) { Wren->TryDodge(); }
+	if (At(5.25f)) { Light(); }
+	if (At(6.8f)) { Face(Wren, Dummy); Combat->StartAttack(EAttackKind::GuardBreak, EGuardDirection::Top); }
+	if (At(7.3f))
+	{
+		// Wound him enough to finish, while the guard break has him reeling.
+		Dummy->GetAttributes()->MinHealth = 0.f;
+		Dummy->GetAttributes()->ApplyDamage(Dummy->GetAttributes()->Health - 30.f, Wren);
+		Dummy->GetCombat()->Stagger(2.f);
+		UE_LOG(LogConquer, Log, TEXT("Fight film: execution %s"), Wren->TryExecute() ? TEXT("started") : TEXT("NOT possible"));
+	}
+	if (MoveTime >= 0.5f && MoveTime < 11.f)
+	{
+		FilmFrame(0.05f);
+	}
+	if (At(11.1f))
+	{
+		UE_LOG(LogConquer, Log, TEXT("Fight film: done, %d frames, soldier %s"), Frames, Dummy->IsDead() ? TEXT("dead") : TEXT("alive"));
+	}
 }
 
 void ACombatTestDriver::TickMoveTest(float DeltaSeconds)
@@ -108,7 +202,10 @@ void ACombatTestDriver::Reset()
 {
 	if (Dummy)
 	{
-		Dummy->Destroy();
+		if (!Dummy->IsDead())
+		{
+			Dummy->Destroy();
+		}
 		Dummy = nullptr;
 	}
 	for (TActorIterator<AArrowProjectile> It(GetWorld()); It; ++It)
@@ -175,6 +272,11 @@ void ACombatTestDriver::Tick(float DeltaSeconds)
 	if (bMoveTest)
 	{
 		TickMoveTest(DeltaSeconds);
+		return;
+	}
+	if (bFightFilm)
+	{
+		TickFightFilm(DeltaSeconds);
 		return;
 	}
 
@@ -427,6 +529,25 @@ void ACombatTestDriver::Tick(float DeltaSeconds)
 	}
 
 	case 9:
+		// An execution: a staggered, wounded soldier finished with a heavy, and her control back after.
+		if (At(0.f))
+		{
+			Reset();
+			Dummy = Spawn(AEnemySoldier::StaticClass(), 150.f);
+			Face(Wren, Dummy);
+			Dummy->GetAttributes()->ApplyDamage(Dummy->GetAttributes()->MaxHealth * 0.8f, Wren);
+			Dummy->GetCombat()->Stagger(3.f);
+			Check(TEXT("execution starts"), Wren->TryExecute() && Wren->IsExecuting());
+		}
+		if (At(0.6f)) { Shot(TEXT("execution")); }
+		if (At(3.5f))
+		{
+			Check(TEXT("execution kills and ends"), Dummy->IsDead() && !Wren->IsExecuting(), FString::Printf(TEXT("(dead %d, executing %d)"), Dummy->IsDead(), Wren->IsExecuting()));
+			Next();
+		}
+		break;
+
+	case 10:
 		UE_LOG(LogConquer, Log, TEXT("Combat test: done, %d passed, %d failed"), Passed, Failed);
 		Reset();
 		Next();

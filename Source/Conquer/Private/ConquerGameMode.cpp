@@ -4,6 +4,9 @@
 #include "AttributesComponent.h"
 #include "ConquerHUD.h"
 #include "CombatTestDriver.h"
+#include "SparkBurst.h"
+#include "Sound/SoundBase.h"
+#include "Materials/MaterialInterface.h"
 #include "Conquer.h"
 #include "Camera/CameraActor.h"
 #include "GameFramework/HUD.h"
@@ -26,7 +29,8 @@ void AConquerGameMode::BeginPlay()
 
 #if !UE_BUILD_SHIPPING
 	// -ConquerCombatTest: the duel mechanics, run headless instead of the arena waves.
-	if (FParse::Param(FCommandLine::Get(), TEXT("ConquerCombatTest")) || FParse::Param(FCommandLine::Get(), TEXT("ConquerMoveTest")))
+	if (FParse::Param(FCommandLine::Get(), TEXT("ConquerCombatTest")) || FParse::Param(FCommandLine::Get(), TEXT("ConquerMoveTest"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("ConquerFightFilm")))
 	{
 		bSpawnArenaWaves = false;
 		GetWorld()->SpawnActor<ACombatTestDriver>();
@@ -247,15 +251,123 @@ void AConquerGameMode::NotifyEnemySpawned(AEnemySoldier* Enemy)
 	}
 }
 
-void AConquerGameMode::HitStop(float RealSeconds)
+void AConquerGameMode::HitStop(float Seconds, AActor* One, AActor* Two)
 {
-	// Timers run on dilated time, so the restore comes after RealSeconds of real time.
-	const float Dilation = 0.05f;
-	UGameplayStatics::SetGlobalTimeDilation(this, Dilation);
-	GetWorldTimerManager().SetTimer(HitStopTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	// Each fighter's own clock slows almost to a stop; everyone else carries on. Rage's speed-up is kept and restored.
+	for (AActor* Actor : { One, Two })
 	{
-		UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
-	}), RealSeconds * Dilation, false);
+		if (Actor && !Frozen.Contains(Actor))
+		{
+			Frozen.Add(Actor, Actor->CustomTimeDilation);
+			Actor->CustomTimeDilation = 0.05f;
+		}
+	}
+	GetWorldTimerManager().SetTimer(HitStopTimer, this, &AConquerGameMode::EndHitStop, Seconds, false);
+}
+
+void AConquerGameMode::EndHitStop()
+{
+	for (const TPair<TWeakObjectPtr<AActor>, float>& Entry : Frozen)
+	{
+		if (AActor* Actor = Entry.Key.Get())
+		{
+			Actor->CustomTimeDilation = Entry.Value;
+		}
+	}
+	Frozen.Reset();
+}
+
+USoundBase* AConquerGameMode::LoadSound(const FSoftObjectPath& Path)
+{
+	if (!Path.IsValid())
+	{
+		return nullptr;
+	}
+	if (TObjectPtr<USoundBase>* Found = Sounds.Find(Path.ToString()))
+	{
+		return *Found;
+	}
+	USoundBase* Sound = Cast<USoundBase>(Path.TryLoad());
+	Sounds.Add(Path.ToString(), Sound);
+	return Sound;
+}
+
+void AConquerGameMode::PlaySwing(AActor* Swinger, EAttackKind Kind)
+{
+	if (Swinger && Kind != EAttackKind::Shot)
+	{
+		const bool bHeavy = Kind == EAttackKind::Heavy || Kind == EAttackKind::Thrust;
+		if (USoundBase* Sound = LoadSound(bHeavy ? HeavySwingSoundPath : SwingSoundPath))
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, Swinger->GetActorLocation(), FMath::FRandRange(0.8f, 1.f), FMath::FRandRange(0.9f, 1.1f));
+		}
+	}
+}
+
+void AConquerGameMode::SpawnSparks(const FVector& Where, const FVector& Direction, float Strength, const FLinearColor& LightColor)
+{
+	if (!SparkMaterial && SparkMaterialPath.IsValid())
+	{
+		SparkMaterial = Cast<UMaterialInterface>(SparkMaterialPath.TryLoad());
+	}
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (ASparkBurst* Burst = GetWorld()->SpawnActor<ASparkBurst>(Where, FRotator::ZeroRotator, Params))
+	{
+		Burst->Burst(Direction, Strength, SparkMaterial, LightColor);
+	}
+}
+
+void AConquerGameMode::PlayCombatEffects(EHitOutcome Outcome, EAttackKind Kind, AConquerCharacterBase* Attacker, AConquerCharacterBase* Defender)
+{
+	if (!Defender)
+	{
+		return;
+	}
+	// Where the weapons meet: between the two at chest height (or at the defender, for an arrow).
+	const FVector At = Defender->GetActorLocation() + FVector(0.f, 0.f, 45.f);
+	const FVector Toward = Attacker ? (Attacker->GetActorLocation() - Defender->GetActorLocation()).GetSafeNormal2D() : Defender->GetActorForwardVector();
+	const FVector Contact = At + Toward * (Defender->GetCapsuleRadius() + 25.f);
+	const bool bBig = Kind == EAttackKind::Heavy || Kind == EAttackKind::Thrust;
+
+	USoundBase* Sound = nullptr;
+	float Kick = 0.f;
+	switch (Outcome)
+	{
+	case EHitOutcome::Parried:
+		SpawnSparks(Contact, Toward, 1.8f, FLinearColor(1.f, 0.8f, 0.35f));
+		Sound = LoadSound(ParrySoundPath);
+		Kick = 0.8f;
+		break;
+	case EHitOutcome::Blocked:
+		SpawnSparks(Contact, Toward, bBig ? 1.f : 0.6f, FLinearColor(1.f, 0.7f, 0.4f));
+		Sound = LoadSound(BlockSoundPath);
+		Kick = bBig ? 0.5f : 0.25f;
+		break;
+	case EHitOutcome::GuardBroken:
+	case EHitOutcome::Countered:
+		Sound = LoadSound(ThudSoundPath);
+		Kick = 0.5f;
+		break;
+	case EHitOutcome::Hit:
+		Sound = LoadSound(HitSoundPath);
+		Kick = bBig ? 0.7f : 0.3f;
+		break;
+	default:
+		break;
+	}
+	if (Sound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Contact, 1.f, FMath::FRandRange(0.9f, 1.1f));
+	}
+	if (Kick > 0.f)
+	{
+		Defender->OnCombatImpact(Kick);
+		if (Attacker)
+		{
+			Attacker->OnCombatImpact(Kick * 0.6f);
+		}
+	}
 }
 
 void AConquerGameMode::Flash(const FLinearColor& Color, float Seconds)

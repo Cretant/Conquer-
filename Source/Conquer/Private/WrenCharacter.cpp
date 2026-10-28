@@ -4,6 +4,9 @@
 #include "RageComponent.h"
 #include "ConquerGameMode.h"
 #include "ArrowProjectile.h"
+#include "GarrickBoss.h"
+#include "ConquerHitNotify.h"
+#include "Camera/CameraActor.h"
 #include "Conquer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -50,9 +53,13 @@ void AWrenCharacter::BeginPlay()
 	UpdateMovementMode();
 
 	SwordMesh = Weapon->GetStaticMesh();
+	BaseFieldOfView = FollowCamera->FieldOfView;
 	SwordLight = Combat->LightAttack;
 	SwordHeavy = Combat->HeavyAttack;
 	SwordGuardBreak = Combat->GuardBreakAttack;
+	SwordLightCombo = Combat->LightCombo;
+	SwordHeavyCombo = Combat->HeavyCombo;
+	UpdateGuard();
 }
 
 void AWrenCharacter::EquipPitchfork(bool bPitchfork)
@@ -65,6 +72,18 @@ void AWrenCharacter::EquipPitchfork(bool bPitchfork)
 	bPitchforkEquipped = bPitchfork;
 	Weapon->SetStaticMesh(bPitchfork && Pitchfork ? Pitchfork : SwordMesh.Get());
 	Weapon->SetRelativeLocationAndRotation(bPitchfork ? PitchforkLocation : WeaponLocation, bPitchfork ? PitchforkRotation : WeaponRotation);
+
+	// The pitchfork jabs: thrusts in place of the sword's swings, and no sword combos.
+	auto SetMontages = [](FAttackSpec& Spec, const FAttackSpec& Sword, UAnimMontage* Thrust)
+	{
+		Spec.MontageLeft = Thrust ? Thrust : Sword.MontageLeft.Get();
+		Spec.MontageTop = Thrust ? Thrust : Sword.MontageTop.Get();
+		Spec.MontageRight = Thrust ? Thrust : Sword.MontageRight.Get();
+	};
+	SetMontages(Combat->LightAttack, SwordLight, bPitchfork ? ThrustLightMontage.Get() : nullptr);
+	SetMontages(Combat->HeavyAttack, SwordHeavy, bPitchfork ? ThrustHeavyMontage.Get() : nullptr);
+	Combat->LightCombo = bPitchfork && ThrustLightMontage ? TArray<TObjectPtr<UAnimMontage>>() : SwordLightCombo;
+	Combat->HeavyCombo = bPitchfork && ThrustHeavyMontage ? TArray<TObjectPtr<UAnimMontage>>() : SwordHeavyCombo;
 	ApplyWeaponStats();
 }
 
@@ -105,6 +124,11 @@ void AWrenCharacter::SetKnockedDown(bool bDown)
 		// Straight to the end of the fall: the cut hides the blow itself.
 		Anim->Montage_Play(Fall);
 		Anim->Montage_SetPosition(Fall, Fall->GetPlayLength() - 0.05f);
+	}
+	else if (GetUpMontage)
+	{
+		Anim->Montage_Stop(0.f, Fall);
+		Anim->Montage_Play(GetUpMontage);
 	}
 	else
 	{
@@ -270,13 +294,17 @@ void AWrenCharacter::OnLook(const FInputActionValue& Value)
 	AddControllerPitchInput(-Look.Y);
 }
 
-void AWrenCharacter::OnLight()      { Attack(Combat->CanDodgeAttack() ? EAttackKind::DodgeAttack : EAttackKind::Light); }
+void AWrenCharacter::OnLight()      { if (!IsExecuting()) { Attack(Combat->CanDodgeAttack() ? EAttackKind::DodgeAttack : EAttackKind::Light); } }
 void AWrenCharacter::OnGuardBreak() { Attack(EAttackKind::GuardBreak); }
 void AWrenCharacter::OnFeint()      { Combat->Feint(); }
 void AWrenCharacter::OnRage()       { Rage->TryActivate(); }
 
 void AWrenCharacter::OnHeavy()
 {
+	if (IsExecuting())
+	{
+		return;
+	}
 	if (!TryExecute())
 	{
 		Attack(EAttackKind::Heavy);
@@ -290,6 +318,10 @@ void AWrenCharacter::OnDodge()
 
 bool AWrenCharacter::TryDodge()
 {
+	if (IsExecuting())
+	{
+		return false;
+	}
 	FVector Dir = FVector::ZeroVector;
 	if (Controller && !MoveInput.IsNearlyZero())
 	{
@@ -328,6 +360,8 @@ void AWrenCharacter::SetGuardHeld(bool bHeld)
 void AWrenCharacter::UpdateGuard()
 {
 	Combat->bGuardRaised = LockTarget != nullptr || bGuardHeld;
+	// Locked on, her attacks come from her guard side; free, they flow as combos.
+	Combat->bUseCombos = LockTarget == nullptr;
 }
 
 EGuardDirection AWrenCharacter::SideOfNearestThreat() const
@@ -401,21 +435,170 @@ void AWrenCharacter::Attack(EAttackKind Kind)
 	Combat->StartAttack(Kind, Direction);
 }
 
+bool AWrenCharacter::CanExecute(const AConquerCharacterBase* Target) const
+{
+	return Target && !Target->IsDead() && Target->GetCombat()->IsStaggered()
+		&& Target->GetAttributes()->GetHealthFraction() <= ExecuteHealthFraction
+		&& FVector::Dist(Target->GetActorLocation(), GetActorLocation()) <= ExecuteRange;
+}
+
 bool AWrenCharacter::TryExecute()
 {
 	AConquerCharacterBase* Target = LockTarget ? LockTarget.Get() : FindBestTarget(ExecuteRange);
-	if (!Target || Target->IsDead() || !Target->GetCombat()->IsStaggered()
-		|| Target->GetAttributes()->GetHealthFraction() > ExecuteHealthFraction
-		|| FVector::Dist(Target->GetActorLocation(), GetActorLocation()) > ExecuteRange)
+	if (IsExecuting() || IsDead() || !CanExecute(Target))
 	{
 		return false;
 	}
-
-	UE_LOG(LogConquer, Log, TEXT("Wren executes %s"), *Target->GetName());
-	Target->Kill(this);
-	Attributes->Heal(ExecuteHeal);
-	Rage->AddRage(RageOnKill * 1.5f);
+	StartExecution(Target);
 	return true;
+}
+
+void AWrenCharacter::StartExecution(AConquerCharacterBase* Target)
+{
+	ExecutionTarget = Target;
+	ExecutionTime = 0.f;
+	ExecutionBlowsDone = 0;
+	ExecutionBlows.Reset();
+	Combat->Stagger(0.f);
+	Target->GetCombat()->Stagger(9999.f);
+
+	// Square up: the victim set in front of her, facing her.
+	const FVector Forward = (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	SetActorRotation(Forward.Rotation());
+	const FVector Spot = GetActorLocation() + Forward * 135.f;
+	Target->SetActorLocation(FVector(Spot.X, Spot.Y, Target->GetActorLocation().Z), true);
+	Target->SetActorRotation((-Forward).Rotation());
+
+	// Which finisher: Sir Garrick kneels for an overhead blow; anyone else gets one of three.
+	const bool bBoss = Target->IsA<AGarrickBoss>();
+	ExecutionVariant = bBoss ? 3 : FMath::RandRange(0, 2);
+	UAnimMontage* Montage = nullptr;
+	float Rate = 1.f;
+	switch (ExecutionVariant)
+	{
+	case 0:
+		// A flurry: two cuts that rock him, then the last.
+		Montage = Combat->HeavyCombo.Num() > 0 ? Combat->HeavyCombo.Last().Get() : Combat->HeavyAttack.MontageTop.Get();
+		Rate = 1.1f;
+		break;
+	case 1:
+		// A kick to the gut, then a heavy cut.
+		Montage = Combat->GuardBreakAttack.MontageTop;
+		Rate = 1.2f;
+		break;
+	case 2:
+		// A lunging thrust straight through.
+		Montage = Combat->DodgeAttack.MontageTop;
+		Rate = 0.9f;
+		break;
+	default:
+		Montage = Combat->HeavyAttack.MontageTop;
+		Rate = 0.8f;
+		break;
+	}
+	const float Hit = UConquerHitNotify::FindHitTime(Montage);
+	PlayMontage(Montage, Rate);
+	ExecutionKillAt = (Hit > 0.f ? Hit : 0.6f) / Rate;
+	if (ExecutionVariant == 0)
+	{
+		ExecutionBlows = { ExecutionKillAt * 0.45f, ExecutionKillAt * 0.75f };
+	}
+	else if (ExecutionVariant == 1)
+	{
+		// The kick lands, then the heavy follows.
+		ExecutionBlows = { ExecutionKillAt };
+		ExecutionKillAt += 0.75f;
+	}
+	ExecutionEndAt = ExecutionKillAt + (bBoss ? 1.4f : 0.9f);
+
+	// A low camera from her sword side, both of them in frame.
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		const FVector Mid = (GetActorLocation() + Target->GetActorLocation()) * 0.5f;
+		const FVector Side = FVector::CrossProduct(FVector::UpVector, Forward);
+		const FVector Eye = Mid + Side * 300.f - Forward * 60.f + FVector(0.f, 0.f, bBoss ? 10.f : 30.f);
+		ExecutionCamera = GetWorld()->SpawnActor<ACameraActor>(Eye, (Mid + FVector(0.f, 0.f, 20.f) - Eye).Rotation());
+		PC->SetViewTargetWithBlend(ExecutionCamera, 0.25f, VTBlend_EaseInOut, 2.f);
+	}
+	if (AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>())
+	{
+		GameMode->bLetterbox = true;
+	}
+	UE_LOG(LogConquer, Log, TEXT("Wren executes %s (finisher %d)"), *Target->GetName(), ExecutionVariant);
+}
+
+void AWrenCharacter::UpdateExecution(float DeltaSeconds)
+{
+	AConquerCharacterBase* Target = ExecutionTarget;
+	if (!Target)
+	{
+		return;
+	}
+	ExecutionTime += DeltaSeconds;
+	AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
+	const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
+
+	// The blows before the last rock him: a flinch, sparks of contact, the camera kicks.
+	while (ExecutionBlowsDone < ExecutionBlows.Num() && ExecutionTime >= ExecutionBlows[ExecutionBlowsDone])
+	{
+		++ExecutionBlowsDone;
+		Target->GetCombat()->PlayReaction(ExecutionVariant == 1 ? Target->GetCombat()->GuardBrokenMontage.Get() : Target->GetCombat()->HitReactMontage.Get());
+		Target->PlayPhysicalHit(Forward, 300.f);
+		if (ExecutionVariant == 1)
+		{
+			// After the kick, the heavy cut.
+			PlayMontage(Combat->HeavyCombo.Num() > 0 ? Combat->HeavyCombo[0].Get() : Combat->HeavyAttack.MontageTop.Get(), 1.3f);
+		}
+		OnCombatImpact(0.5f);
+		if (GameMode)
+		{
+			GameMode->HitStop(0.06f, this, Target);
+		}
+	}
+
+	if (!Target->IsDead() && ExecutionTime >= ExecutionKillAt)
+	{
+		// The last blow: he's thrown back, the world stops a moment, she's healed and enraged.
+		Target->DeathImpulse = Forward * (ExecutionVariant == 3 ? 300.f : 850.f) + FVector(0.f, 0.f, 300.f);
+		Target->Kill(this);
+		Attributes->Heal(ExecuteHeal);
+		Rage->AddRage(RageOnKill * 1.5f);
+		OnCombatImpact(1.f);
+		if (GameMode)
+		{
+			GameMode->HitStop(0.18f, this, Target);
+			GameMode->Flash(FLinearColor(0.6f, 0.05f, 0.02f, 0.25f), 0.35f);
+			GameMode->ShowCallout(TEXT("EXECUTED"));
+		}
+	}
+
+	if (ExecutionTime >= ExecutionEndAt)
+	{
+		FinishExecution();
+	}
+}
+
+void AWrenCharacter::FinishExecution()
+{
+	ExecutionTarget = nullptr;
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		PC->SetViewTargetWithBlend(this, 0.35f, VTBlend_EaseInOut, 2.f);
+	}
+	if (ExecutionCamera)
+	{
+		ExecutionCamera->SetLifeSpan(0.5f);
+		ExecutionCamera = nullptr;
+	}
+	if (AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>())
+	{
+		GameMode->bLetterbox = false;
+	}
+}
+
+void AWrenCharacter::OnCombatImpact(float Strength)
+{
+	CameraKick = FMath::Max(CameraKick, FMath::Clamp(Strength, 0.f, 1.f));
 }
 
 void AWrenCharacter::OnLandedAttack(AConquerCharacterBase* Target, EHitOutcome Outcome, float DamageDealt)
@@ -491,6 +674,22 @@ void AWrenCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	GuardAccumulator *= 0.85f;
+	UpdateExecution(DeltaSeconds);
+
+	// The camera kick: a quick shake of the camera and a punch out of the field of view, fading over half a second.
+	if (CameraKick > 0.f)
+	{
+		CameraKick = FMath::Max(0.f, CameraKick - DeltaSeconds * 2.2f);
+		const float Time = GetWorld()->GetTimeSeconds() * 40.f;
+		const float Shake = CameraKick * CameraKick * 9.f;
+		FollowCamera->SetRelativeLocation(FVector(0.f, FMath::Sin(Time * 1.3f) * Shake, FMath::Cos(Time) * Shake));
+		FollowCamera->SetFieldOfView(BaseFieldOfView + CameraKick * 7.f);
+	}
+	else if (!FollowCamera->GetRelativeLocation().IsZero())
+	{
+		FollowCamera->SetRelativeLocation(FVector::ZeroVector);
+		FollowCamera->SetFieldOfView(BaseFieldOfView);
+	}
 
 	// Holding guard out of lock-on, she keeps turning it to meet the next blow.
 	if (bGuardHeld && !LockTarget)

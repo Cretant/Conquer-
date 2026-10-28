@@ -3,6 +3,9 @@
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
+#include "WeaponTrailComponent.h"
+#include "PhysicsEngine/PhysicalAnimationComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Conquer.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -39,6 +42,11 @@ AConquerCharacterBase::AConquerCharacterBase()
 	Shield->SetGenerateOverlapEvents(false);
 	Shield->SetCanEverAffectNavigation(false);
 
+	Trail = CreateDefaultSubobject<UWeaponTrailComponent>(TEXT("Trail"));
+	Trail->SetupAttachment(RootComponent);
+
+	PhysicalAnimation = CreateDefaultSubobject<UPhysicalAnimationComponent>(TEXT("PhysicalAnimation"));
+
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->bOrientRotationToMovement = true;
 	Move->RotationRate = FRotator(0.f, 720.f, 0.f);
@@ -57,6 +65,8 @@ void AConquerCharacterBase::BeginPlay()
 
 	ApplyPlaceholderBody();
 	ApplyPlaceholderAnimations();
+	Trail->Setup(Weapon, Combat, TrailMaterialPath.IsValid() ? Cast<UMaterialInterface>(TrailMaterialPath.TryLoad()) : nullptr);
+	PhysicalAnimation->SetSkeletalMeshComponent(GetMesh());
 	Attributes->OnDamaged.AddDynamic(this, &AConquerCharacterBase::HandleDamaged);
 	Attributes->OnDeath.AddDynamic(this, &AConquerCharacterBase::HandleDeath);
 }
@@ -220,7 +230,39 @@ void AConquerCharacterBase::ApplyPlaceholderAnimations()
 	Fill(Combat->ThrustAttack.MontageLeft, ThrustMontagePath);
 	Fill(Combat->ThrustAttack.MontageTop, ThrustMontagePath);
 	Fill(Combat->ThrustAttack.MontageRight, ThrustMontagePath);
-	// The dodge attack is a quick overhead light for now.
+	Fill(Combat->DodgeAttack.MontageLeft, DodgeAttackMontagePath);
+	Fill(Combat->DodgeAttack.MontageTop, DodgeAttackMontagePath);
+	Fill(Combat->DodgeAttack.MontageRight, DodgeAttackMontagePath);
+	Fill(Combat->ShotAttack.MontageLeft, ShotMontagePath);
+	Fill(Combat->ShotAttack.MontageTop, ShotMontagePath);
+	Fill(Combat->ShotAttack.MontageRight, ShotMontagePath);
+	Fill(Combat->ParryMontage, ParryMontagePath);
+	Fill(Combat->ParriedRecoilMontage, ParriedRecoilMontagePath);
+	auto FillAll = [&Load](TArray<TObjectPtr<UAnimMontage>>& Montages, const TArray<FSoftObjectPath>& Paths)
+	{
+		if (Montages.Num() == 0)
+		{
+			for (const FSoftObjectPath& Path : Paths)
+			{
+				if (UAnimMontage* Montage = Load(Path))
+				{
+					Montages.Add(Montage);
+				}
+			}
+		}
+	};
+	FillAll(Combat->LightCombo, LightComboMontagePaths);
+	FillAll(Combat->HeavyCombo, HeavyComboMontagePaths);
+	auto LoadIf = [&Load](const FSoftObjectPath& Path) { return Path.IsValid() ? Load(Path) : nullptr; };
+	ShotReleaseMontage = LoadIf(ShotReleaseMontagePath);
+	ThrustLightMontage = LoadIf(ThrustLightMontagePath);
+	ThrustHeavyMontage = LoadIf(ThrustHeavyMontagePath);
+	GetUpMontage = LoadIf(GetUpMontagePath);
+	if (LungeRange > 0.f)
+	{
+		Combat->LungeRange = LungeRange;
+	}
+	// Without a dodge attack of its own, a quick overhead light.
 	Fill(Combat->DodgeAttack.MontageLeft, LightTopMontagePath);
 	Fill(Combat->DodgeAttack.MontageTop, LightTopMontagePath);
 	Fill(Combat->DodgeAttack.MontageRight, LightTopMontagePath);
@@ -279,6 +321,59 @@ UAnimSequence* AConquerCharacterBase::LoadOptionalClip(const FSoftObjectPath& Pa
 	return Cast<UAnimSequence>(Path.TryLoad());
 }
 
+void AConquerCharacterBase::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdatePhysicalHit(DeltaSeconds);
+}
+
+float AConquerCharacterBase::PlayMontage(UAnimMontage* Montage, float Rate)
+{
+	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+	return Montage && Anim ? Anim->Montage_Play(Montage, Rate) : 0.f;
+}
+
+void AConquerCharacterBase::PlayPhysicalHit(const FVector& Direction, float Strength)
+{
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!bPhysicalHitReactions || IsDead() || !MeshComp->GetPhysicsAsset() || MeshComp->GetBoneIndex(PhysicalHitBone) == INDEX_NONE)
+	{
+		return;
+	}
+	// The bodies chase the animation with springs, so the blow knocks them off it and they swing back.
+	FPhysicalAnimationData Springs;
+	Springs.bIsLocalSimulation = false;
+	Springs.OrientationStrength = 1500.f;
+	Springs.AngularVelocityStrength = 150.f;
+	Springs.PositionStrength = 1500.f;
+	Springs.VelocityStrength = 150.f;
+	MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	MeshComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	PhysicalAnimation->ApplyPhysicalAnimationSettingsBelow(PhysicalHitBone, Springs, true);
+	MeshComp->SetAllBodiesBelowSimulatePhysics(PhysicalHitBone, true, true);
+	PhysicalHitWeight = 0.75f;
+	MeshComp->SetAllBodiesBelowPhysicsBlendWeight(PhysicalHitBone, PhysicalHitWeight, false, true);
+	MeshComp->AddImpulseToAllBodiesBelow(Direction.GetSafeNormal() * Strength, PhysicalHitBone, true, true);
+}
+
+void AConquerCharacterBase::UpdatePhysicalHit(float DeltaSeconds)
+{
+	if (PhysicalHitWeight <= 0.f || IsDead())
+	{
+		return;
+	}
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	PhysicalHitWeight -= DeltaSeconds * 2.f;
+	if (PhysicalHitWeight <= 0.f)
+	{
+		PhysicalHitWeight = 0.f;
+		MeshComp->SetAllBodiesBelowSimulatePhysics(PhysicalHitBone, false, true);
+		MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		return;
+	}
+	MeshComp->SetAllBodiesBelowPhysicsBlendWeight(PhysicalHitBone, PhysicalHitWeight, false, true);
+}
+
 bool AConquerCharacterBase::IsDead() const
 {
 	return Attributes && Attributes->IsDead();
@@ -314,7 +409,18 @@ void AConquerCharacterBase::HandleDeath(AActor* Killer)
 
 	USkeletalMeshComponent* MeshComp = GetMesh();
 	UAnimInstance* Anim = MeshComp->GetAnimInstance();
-	if (Anim && DeathMontages.Num() > 0)
+	if (!DeathImpulse.IsNearlyZero() && MeshComp->GetPhysicsAsset())
+	{
+		// A big blow: limp, and thrown the way it was struck.
+		PhysicalHitWeight = 0.f;
+		MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
+		MeshComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+		MeshComp->SetAllBodiesSimulatePhysics(true);
+		MeshComp->SetAllBodiesPhysicsBlendWeight(1.f);
+		MeshComp->WakeAllRigidBodies();
+		MeshComp->AddImpulseToAllBodiesBelow(DeathImpulse, NAME_None, true, true);
+	}
+	else if (Anim && DeathMontages.Num() > 0)
 	{
 		// Death montages don't blend out, so the body holds the last frame on the ground.
 		Anim->Montage_Play(DeathMontages[FMath::RandRange(0, DeathMontages.Num() - 1)]);

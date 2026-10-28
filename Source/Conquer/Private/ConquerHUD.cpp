@@ -111,9 +111,9 @@ void AConquerHUD::DrawHUD()
 		{
 			DrawText(Enemy->DisplayName, FLinearColor::White, Centre.X - BarW * 0.5f, Centre.Y - 70.f, nullptr, 1.f);
 		}
-		if (bTarget && Enemy->GetCombat()->IsStaggered() && Enemy->GetAttributes()->GetHealthFraction() <= Wren->ExecuteHealthFraction)
+		if (Wren->CanExecute(Enemy) && !Wren->IsExecuting())
 		{
-			DrawText(TEXT("EXECUTE [Heavy]"), IncomingUnblockable, Centre.X - 45.f, Centre.Y + 34.f, nullptr, 1.f);
+			DrawText(TEXT("EXECUTE  [RMB / RT]"), IncomingUnblockable, Centre.X - 60.f, Centre.Y + 34.f, nullptr, 1.1f);
 		}
 	}
 
