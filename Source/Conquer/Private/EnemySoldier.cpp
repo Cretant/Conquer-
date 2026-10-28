@@ -3,7 +3,6 @@
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Components/CapsuleComponent.h"
 
 AEnemySoldier::AEnemySoldier()
 {
@@ -29,7 +28,6 @@ AEnemySoldier::AEnemySoldier()
 AEnemyCaptain::AEnemyCaptain()
 {
 	DisplayName = TEXT("Gate Captain");
-	GetCapsuleComponent()->SetRelativeScale3D(FVector(1.15f));
 
 	Attributes->MaxHealth = 220.f;
 	Combat->bHyperArmor = true;

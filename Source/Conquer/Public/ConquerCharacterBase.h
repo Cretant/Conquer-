@@ -60,12 +60,34 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> Weapon;
 
+	/** The shield on the left arm, for characters that carry one. Also purely visual. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> Shield;
+
 	/** Placeholder body, set in DefaultGame.ini so it can change without recompiling. */
 	UPROPERTY(Config)
 	FSoftObjectPath BodyMeshPath;
 
 	UPROPERTY(Config)
 	FSoftClassPath AnimClassPath;
+
+	/** Capsule and body placement for the body above (defaults fit the mannequins). */
+	UPROPERTY(Config)
+	float CapsuleRadius = 42.f;
+
+	UPROPERTY(Config)
+	float CapsuleHalfHeight = 96.f;
+
+	UPROPERTY(Config)
+	FVector MeshLocation = FVector(0.f, 0.f, -96.f);
+
+	UPROPERTY(Config)
+	FRotator MeshRotation = FRotator(0.f, -90.f, 0.f);
+
+	/** Locomotion clips for bodies driven by UConquerAnimInstance instead of an animation blueprint. */
+	UPROPERTY(Config) FSoftObjectPath IdleAnimPath;
+	UPROPERTY(Config) FSoftObjectPath WalkAnimPath;
+	UPROPERTY(Config) FSoftObjectPath JogAnimPath;
 
 	/** Placeholder weapon and where it sits relative to the hand bone. */
 	UPROPERTY(Config)
@@ -80,6 +102,19 @@ protected:
 	UPROPERTY(Config)
 	FRotator WeaponRotation = FRotator::ZeroRotator;
 
+	/** Optional shield, placed like the weapon. No mesh, no shield. */
+	UPROPERTY(Config)
+	FSoftObjectPath ShieldMeshPath;
+
+	UPROPERTY(Config)
+	FName ShieldSocket = TEXT("hand_l");
+
+	UPROPERTY(Config)
+	FVector ShieldLocation = FVector::ZeroVector;
+
+	UPROPERTY(Config)
+	FRotator ShieldRotation = FRotator::ZeroRotator;
+
 	/** Placeholder combat animations, also set in DefaultGame.ini. Montages set on the components win. */
 	UPROPERTY(Config) FSoftObjectPath LightLeftMontagePath;
 	UPROPERTY(Config) FSoftObjectPath LightTopMontagePath;
@@ -92,6 +127,9 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath GuardBrokenMontagePath;
 	UPROPERTY(Config) FSoftObjectPath BlockMontagePath;
 	UPROPERTY(Config) TArray<FSoftObjectPath> DeathMontagePaths;
+
+	/** "From=>To" path rewrites tried before each montage path; the rewritten montage is used if it exists locally. */
+	UPROPERTY(Config) TArray<FString> LocalAnimOverrides;
 
 	/** One is picked at random on death; with none, the body ragdolls. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conquer")

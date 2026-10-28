@@ -1,10 +1,14 @@
-"""Builds the sword content: Quaternius' Universal Animation Library 1 and 2 (CC0) retargeted onto the UE5
-mannequin, and the placeholder sword mesh (Art/Weapons/SM_Sword.fbx, made by Tools/make_sword.py).
+"""Builds the sword content: sword clips retargeted onto the UE5 mannequin from Quaternius' Universal Animation
+Library 1 and 2 (CC0) and, when present, Mixamo's Sword And Shield Pack; plus the placeholder sword mesh
+(Art/Weapons/SM_Sword.fbx, made by Tools/make_sword.py).
 
-Needs the Standard zips extracted under Art/Quaternius (see Art/LICENSES.md). Run from the repo root:
+Needs the raw packs under Art/ (see Art/LICENSES.md; Mixamo merged first by Tools/merge_mixamo.py). Run from the
+repo root:
     UnrealEditor-Cmd.exe Conquer.uproject -run=pythonscript -script="Tools/build_sword.py" -unattended -nosplash
 
-Retargeted clips land in /Game/Conquer/Animations/Sword as A_<clip>, e.g. A_Sword_Regular_A. Tools/build_anims.py makes the montages.
+Retargeted clips land in /Game/Conquer/Animations/Sword as A_<clip>, e.g. A_Sword_Regular_A; Mixamo's go to
+/Game/Conquer/Animations/Mixamo/Clips (A_MX_<clip>), which stays out of git.
+Tools/build_anims.py makes the montages.
 """
 import os
 import shutil
@@ -12,17 +16,24 @@ import shutil
 import unreal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ART = os.path.join(REPO, "Art", "Quaternius")
+ART = os.path.join(REPO, "Art")
 OUT = "/Game/Conquer/Animations/Sword"
+# Mixamo's clips may not be redistributed, so they go to a folder that stays out of git.
+OUT_MIXAMO = "/Game/Conquer/Animations/Mixamo/Clips"
 RIGS = "/Game/Conquer/Animations/Retarget"
 TARGET_MESH = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"
 
+# Pack -> (file under Art/, clip-name prefix on the retargeted clips, clips to retarget)
 PACKS = {
-    "UAL1": ("Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+    "UAL1": ("Quaternius/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb", "",
              ["Sword_Attack", "Sword_Idle", "Hit_Chest", "Hit_Head", "Death01", "Roll"]),
-    "UAL2": ("Universal Animation Library 2[Standard]/Unreal-Godot/UAL2_Standard.glb",
+    "UAL2": ("Quaternius/Universal Animation Library 2[Standard]/Unreal-Godot/UAL2_Standard.glb", "",
              ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C", "Sword_Heavy_Combo", "Sword_Block",
               "Sword_Dash", "Hit_Knockback", "Melee_Hook"]),
+    # Mixamo's Sword And Shield Pack, merged into one GLB by Tools/merge_mixamo.py. Optional: skipped if absent.
+    "Mixamo": ("Mixamo/SwordShield.glb", "MX_",
+               ["Slash", "Slash_3", "Attack_2", "Attack_4", "Kick", "Block", "Block_Idle", "Idle",
+                "Impact", "Impact_2", "Impact_3", "Death", "Death_2"]),
 }
 
 assets = unreal.EditorAssetLibrary
@@ -41,7 +52,7 @@ def wipe(game_dir):
 
 
 def import_pack(name, rel):
-    dest = "/Game/Quaternius/" + name
+    dest = "/Game/ThirdParty/" + name
     task = unreal.AssetImportTask()
     task.filename = os.path.join(ART, rel)
     task.destination_path = dest
@@ -84,6 +95,7 @@ def make_retargeter(name, source_rig, target_rig, source_mesh, target_mesh):
     ctrl.auto_map_chains(unreal.AutoMapChainType.FUZZY, True)
     # The UAL rig rests in a T-pose and the mannequin in an A-pose: line the target's bones up with the source's.
     ctrl.auto_align_all_bones(unreal.RetargetSourceOrTarget.TARGET)
+    log("%s root settings: %s" % (name, ctrl.get_root_settings()))
     assets.save_asset(path, only_if_is_dirty=False)
     return rtg
 
@@ -95,11 +107,26 @@ def short_name(asset_data):
 
 WEAPONS = "/Game/Conquer/Weapons"
 
-# Where the grip sits in hand_r's space while the UAL fist is closed (measured from the retargeted clips):
-# the grip runs from the pinky to the index finger, and the edge faces the way the knuckles point.
-GRIP_CENTRE = unreal.Vector(-3.0, -5.8, -3.0)
-GRIP_AXIS = unreal.Vector(0.17, -0.38, 0.91)
+# The sword is fitted to the closed fist of the clip below (the main attack source): the grip runs from the
+# pinky to the index finger through the middle of the curled fingers and thumb, and the edge faces the way the
+# knuckles point. The result is logged for WeaponLocation / WeaponRotation in Config/DefaultGame.ini.
+GRIP_CLIPS = [OUT_MIXAMO + "/A_MX_Slash", OUT + "/A_Sword_Regular_A"]
 KNUCKLES = unreal.Vector(0.0, -1.0, 0.0)
+
+
+def measure_grip():
+    clip = next(assets.load_asset(c) for c in GRIP_CLIPS if assets.does_asset_exist(c))
+    poses = unreal.AnimPoseExtensions
+    pose = poses.get_anim_pose_at_time(clip, 0.1, unreal.AnimPoseEvaluationOptions())
+    hand = poses.get_bone_pose(pose, "hand_r", unreal.AnimPoseSpaces.WORLD).inverse()
+
+    def at(bone):
+        return hand.transform_location(poses.get_bone_pose(pose, bone, unreal.AnimPoseSpaces.WORLD).translation)
+
+    wrap = [at(b) for b in ("index_02_r", "middle_02_r", "ring_02_r", "pinky_02_r", "thumb_02_r")]
+    centre = unreal.Vector(sum(v.x for v in wrap) / 5, sum(v.y for v in wrap) / 5, sum(v.z for v in wrap) / 5)
+    axis = (at("index_02_r") - at("pinky_02_r")).normal()
+    return clip.get_name(), centre, axis
 
 
 def make_material(name, color, metallic, roughness, parent):
@@ -151,28 +178,33 @@ def build_sword_mesh():
     assets.save_asset(WEAPONS + "/SM_Sword", only_if_is_dirty=False)
 
     box = mesh.get_bounding_box()
-    edge = KNUCKLES - GRIP_AXIS * KNUCKLES.dot(GRIP_AXIS)
-    rot = unreal.MathLibrary.make_rot_from_xy(GRIP_AXIS.normal(), edge.normal())
-    log("sword bounds min %s max %s" % (box.min, box.max))
-    log("WeaponLocation=(X=%.2f,Y=%.2f,Z=%.2f)" % (GRIP_CENTRE.x, GRIP_CENTRE.y, GRIP_CENTRE.z))
+    clip, centre, axis = measure_grip()
+    edge = KNUCKLES - axis * KNUCKLES.dot(axis)
+    rot = unreal.MathLibrary.make_rot_from_xy(axis, edge.normal())
+    log("sword bounds min %s max %s; grip measured on %s" % (box.min, box.max, clip))
+    log("WeaponLocation=(X=%.2f,Y=%.2f,Z=%.2f)" % (centre.x, centre.y, centre.z))
     log("WeaponRotation=(Pitch=%.2f,Yaw=%.2f,Roll=%.2f)" % (rot.pitch, rot.yaw, rot.roll))
 
 
-for folder in (RIGS, OUT, WEAPONS, "/Game/Quaternius"):
+for folder in (RIGS, OUT, OUT_MIXAMO, WEAPONS, "/Game/ThirdParty", "/Game/Quaternius"):
     wipe(folder)
 
 target_mesh = assets.load_asset(TARGET_MESH)
 target_rig = make_ik_rig("IK_Mannequin", target_mesh)
 
-for pack, (rel, wanted) in PACKS.items():
+for pack, (rel, prefix, wanted) in PACKS.items():
+    if not os.path.exists(os.path.join(ART, rel)):
+        log("%s: %s not found, skipped" % (pack, rel))
+        continue
     source_mesh, anims = import_pack(pack, rel)
+    file_prefix = os.path.splitext(os.path.basename(rel))[0]
     log("%s clips: %s" % (pack, sorted(short_name(a) for a in anims)))
     source_rig = make_ik_rig("IK_" + pack, source_mesh)
     rtg = make_retargeter("RTG_" + pack + "_To_Mannequin", source_rig, target_rig, source_mesh, target_mesh)
 
     picked = []
     for clip in wanted:
-        match = [a for a in anims if short_name(a) in (clip, pack + "_Standard" + clip)]
+        match = [a for a in anims if short_name(a) in (clip, file_prefix + clip)]
         if not match:
             raise RuntimeError("%s has no clip %s" % (pack, clip))
         picked.append(match[0])
@@ -182,12 +214,12 @@ for pack, (rel, wanted) in PACKS.items():
     inputs.source_mesh = source_mesh
     inputs.target_mesh = target_mesh
     inputs.ik_retarget_asset = rtg
-    inputs.target_path = OUT
-    inputs.search = pack + "_Standard"
-    inputs.replace = ""
+    inputs.target_path = OUT_MIXAMO if pack == "Mixamo" else OUT
+    inputs.search = file_prefix
+    inputs.replace = prefix
     inputs.prefix = "A_"
     inputs.include_referenced_assets = False
-    inputs.overwrite_existing_files = True
+    inputs.overwrite_existing_files = False  # folders are wiped first; overwriting stale registry entries crashes
     for asset_data in unreal.IKRetargetBatchOperation.run_batch_retarget(inputs):
         asset = asset_data.get_asset()
         if isinstance(asset, unreal.AnimSequence):

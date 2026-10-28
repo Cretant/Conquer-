@@ -1,4 +1,5 @@
 #include "ConquerCharacterBase.h"
+#include "ConquerAnimInstance.h"
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
@@ -10,7 +11,9 @@
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Misc/PackageName.h"
 
 AConquerCharacterBase::AConquerCharacterBase()
 {
@@ -28,6 +31,12 @@ AConquerCharacterBase::AConquerCharacterBase()
 	Weapon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Weapon->SetGenerateOverlapEvents(false);
 	Weapon->SetCanEverAffectNavigation(false);
+
+	Shield = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Shield"));
+	Shield->SetupAttachment(GetMesh());
+	Shield->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Shield->SetGenerateOverlapEvents(false);
+	Shield->SetCanEverAffectNavigation(false);
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->bOrientRotationToMovement = true;
@@ -72,6 +81,8 @@ namespace
 void AConquerCharacterBase::ApplyPlaceholderBody()
 {
 	USkeletalMeshComponent* MeshComp = GetMesh();
+	GetCapsuleComponent()->SetCapsuleSize(CapsuleRadius, CapsuleHalfHeight);
+	MeshComp->SetRelativeLocationAndRotation(MeshLocation, MeshRotation);
 
 	if (MeshComp->GetSkeletalMeshAsset() == nullptr)
 	{
@@ -119,12 +130,44 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 	}
 	Weapon->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepRelativeTransform, WeaponSocket);
 	Weapon->SetRelativeLocationAndRotation(WeaponLocation, WeaponRotation);
+
+	if (!Shield->GetStaticMesh() && ShieldMeshPath.IsValid())
+	{
+		Shield->SetStaticMesh(Cast<UStaticMesh>(ShieldMeshPath.TryLoad()));
+	}
+	Shield->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepRelativeTransform, ShieldSocket);
+	Shield->SetRelativeLocationAndRotation(ShieldLocation, ShieldRotation);
+
+	if (UConquerAnimInstance* Locomotion = Cast<UConquerAnimInstance>(MeshComp->GetAnimInstance()))
+	{
+		auto LoadClip = [](const FSoftObjectPath& Path) { return Path.IsValid() ? Cast<UAnimSequence>(Path.TryLoad()) : nullptr; };
+		Locomotion->Idle = LoadClip(IdleAnimPath);
+		Locomotion->Walk = LoadClip(WalkAnimPath);
+		Locomotion->Jog = LoadClip(JogAnimPath);
+	}
 }
 
 void AConquerCharacterBase::ApplyPlaceholderAnimations()
 {
 	auto Load = [this](const FSoftObjectPath& Path)
 	{
+		// A local-only version of the montage (e.g. Mixamo's, which can't go in the public repo) wins when present.
+		for (const FString& Override : LocalAnimOverrides)
+		{
+			FString From, To;
+			if (Override.Split(TEXT("=>"), &From, &To) && Path.ToString().Contains(From))
+			{
+				const FSoftObjectPath Local(Path.ToString().Replace(*From, *To));
+				if (FPackageName::DoesPackageExist(Local.GetLongPackageName()))
+				{
+					if (UAnimMontage* Montage = Cast<UAnimMontage>(Local.TryLoad()))
+					{
+						return Montage;
+					}
+				}
+			}
+		}
+
 		UAnimMontage* Montage = Cast<UAnimMontage>(Path.TryLoad());
 		if (!Montage)
 		{

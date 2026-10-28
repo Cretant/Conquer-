@@ -48,7 +48,10 @@ void AConquerGameMode::BeginPlay()
 			{
 				if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 				{
-					PC->ConsoleCommand(TEXT("HighResShot 1280x720"));
+					PC->ConsoleCommand(TEXT("shot"));
+					const APawn* Pawn = PC->GetPawn();
+					UE_LOG(LogConquer, Log, TEXT("Shot: player %s at %s, camera at %s"), Pawn ? *Pawn->GetName() : TEXT("none"),
+						Pawn ? *Pawn->GetActorLocation().ToCompactString() : TEXT("-"), *PC->PlayerCameraManager->GetCameraLocation().ToCompactString());
 				}
 			}), FCString::Atof(*Time), false);
 		}
