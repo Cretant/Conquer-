@@ -149,7 +149,7 @@ public:
 	TObjectPtr<UAnimMontage> BlockMontage;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
-	bool bDrawDebug = true;
+	bool bDrawDebug = false;
 
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FOnHitResolved OnHitResolved;

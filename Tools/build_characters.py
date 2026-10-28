@@ -175,6 +175,8 @@ for name in NAMES:
         "IdleAnimPath=" + path("MM_Idle"),
         "WalkAnimPath=" + path("MF_Unarmed_Walk_Fwd"),
         "JogAnimPath=" + path("MF_Unarmed_Jog_Fwd"),
+    ] + ["%s%sAnimPath=%s" % (gait, side, path("MF_Unarmed_%s_%s" % (gait, clip)))
+         for gait in ("Walk", "Jog") for side, clip in (("Back", "Bwd"), ("Left", "Left"), ("Right", "Right"))] + [
         "CapsuleRadius=%.1f" % radius,
         "CapsuleHalfHeight=%.1f" % half_height,
         "MeshLocation=(X=0,Y=0,Z=%.1f)" % (-half_height - bottom),

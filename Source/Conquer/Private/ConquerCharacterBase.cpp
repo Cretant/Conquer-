@@ -144,6 +144,12 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 		Locomotion->Idle = LoadClip(IdleAnimPath);
 		Locomotion->Walk = LoadClip(WalkAnimPath);
 		Locomotion->Jog = LoadClip(JogAnimPath);
+		Locomotion->WalkBack = LoadClip(WalkBackAnimPath);
+		Locomotion->WalkLeft = LoadClip(WalkLeftAnimPath);
+		Locomotion->WalkRight = LoadClip(WalkRightAnimPath);
+		Locomotion->JogBack = LoadClip(JogBackAnimPath);
+		Locomotion->JogLeft = LoadClip(JogLeftAnimPath);
+		Locomotion->JogRight = LoadClip(JogRightAnimPath);
 	}
 }
 

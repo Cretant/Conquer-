@@ -88,6 +88,12 @@ protected:
 	UPROPERTY(Config) FSoftObjectPath IdleAnimPath;
 	UPROPERTY(Config) FSoftObjectPath WalkAnimPath;
 	UPROPERTY(Config) FSoftObjectPath JogAnimPath;
+	UPROPERTY(Config) FSoftObjectPath WalkBackAnimPath;
+	UPROPERTY(Config) FSoftObjectPath WalkLeftAnimPath;
+	UPROPERTY(Config) FSoftObjectPath WalkRightAnimPath;
+	UPROPERTY(Config) FSoftObjectPath JogBackAnimPath;
+	UPROPERTY(Config) FSoftObjectPath JogLeftAnimPath;
+	UPROPERTY(Config) FSoftObjectPath JogRightAnimPath;
 
 	/** Placeholder weapon and where it sits relative to the hand bone. */
 	UPROPERTY(Config)

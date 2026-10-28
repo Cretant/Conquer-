@@ -34,11 +34,13 @@ struct FConquerAnimInstanceProxy : public FAnimInstanceProxy
 		FAnimInstanceProxy::PreUpdate(InInstance, DeltaSeconds);
 		const UConquerAnimInstance* Instance = CastChecked<UConquerAnimInstance>(InInstance);
 		Idle = Instance->Idle;
-		Walk = Instance->Walk;
-		Jog = Instance->Jog;
+		// Forward, right, back, left: the order the direction sectors below go round in.
+		Walk = { Instance->Walk, Instance->WalkRight, Instance->WalkBack, Instance->WalkLeft };
+		Jog = { Instance->Jog, Instance->JogRight, Instance->JogBack, Instance->JogLeft };
 		WalkSpeed = FMath::Max(Instance->WalkSpeed, 1.f);
 		JogSpeed = FMath::Max(Instance->JogSpeed, WalkSpeed + 1.f);
 		Speed = Instance->GetGroundSpeed();
+		Direction = Instance->GetMoveDirection();
 	}
 
 	virtual void Update(float DeltaSeconds) override
@@ -53,7 +55,7 @@ struct FConquerAnimInstanceProxy : public FAnimInstanceProxy
 		}
 
 		// Walk and jog share one phase so their footfalls stay in step while blending; the rate follows the real speed.
-		const float CycleLength = FMath::Lerp(Length(Walk), Length(Jog), JogAlpha);
+		const float CycleLength = FMath::Lerp(Length(Walk[0]), Length(Jog[0]), JogAlpha);
 		const float NaturalSpeed = FMath::Lerp(WalkSpeed, JogSpeed, JogAlpha);
 		const float Rate = Speed > 1.f ? FMath::Clamp(Speed / NaturalSpeed, 0.5f, 2.f) : 1.f;
 		if (CycleLength > UE_KINDA_SMALL_NUMBER)
@@ -105,32 +107,54 @@ private:
 		FAnimationRuntime::BlendTwoPosesTogether(FAnimationPoseData(One), FAnimationPoseData(Two), WeightOfOne, OutData);
 	}
 
+	/** Samples the two directional clips either side of the movement direction and blends between them. */
+	void SampleDirectional(const TArray<TObjectPtr<UAnimSequence>>& Clips, FPoseContext& Out)
+	{
+		const float Sector = FMath::Fmod(Direction + 360.f, 360.f) / 90.f;
+		const int32 First = FMath::FloorToInt(Sector) % 4;
+		const int32 Second = (First + 1) % 4;
+		const float Alpha = Sector - FMath::FloorToFloat(Sector);
+		const UAnimSequence* A = Clips[First] ? Clips[First].Get() : Clips[0].Get();
+		const UAnimSequence* B = Clips[Second] ? Clips[Second].Get() : Clips[0].Get();
+
+		Sample(A, MovePhase * Length(A), Out);
+		if (Alpha > KINDA_SMALL_NUMBER && A != B)
+		{
+			FPoseContext APose(this);
+			CopyPose(Out, APose);
+			FPoseContext BPose(this);
+			Sample(B, MovePhase * Length(B), BPose);
+			Blend(APose, BPose, 1.f - Alpha, Out);
+		}
+	}
+
 	void EvaluateLocomotion(FPoseContext& Out)
 	{
 		FPoseContext IdlePose(this);
 		Sample(Idle, IdleTime, IdlePose);
-		if (MoveAlpha <= 0.f || !Walk)
+		if (MoveAlpha <= 0.f || !Walk[0])
 		{
 			CopyPose(IdlePose, Out);
 			return;
 		}
 
 		FPoseContext Moving(this);
-		Sample(Walk, MovePhase * Length(Walk), Moving);
-		if (JogAlpha > 0.f && Jog)
+		SampleDirectional(Walk, Moving);
+		if (JogAlpha > 0.f && Jog[0])
 		{
 			FPoseContext WalkPose(this);
 			CopyPose(Moving, WalkPose);
 			FPoseContext JogPose(this);
-			Sample(Jog, MovePhase * Length(Jog), JogPose);
+			SampleDirectional(Jog, JogPose);
 			Blend(WalkPose, JogPose, 1.f - JogAlpha, Moving);
 		}
 		Blend(IdlePose, Moving, 1.f - MoveAlpha, Out);
 	}
 
 	TObjectPtr<UAnimSequence> Idle;
-	TObjectPtr<UAnimSequence> Walk;
-	TObjectPtr<UAnimSequence> Jog;
+	TArray<TObjectPtr<UAnimSequence>> Walk = { nullptr, nullptr, nullptr, nullptr };
+	TArray<TObjectPtr<UAnimSequence>> Jog = { nullptr, nullptr, nullptr, nullptr };
+	float Direction = 0.f;
 	float WalkSpeed = 160.f;
 	float JogSpeed = 450.f;
 	float Speed = 0.f;
@@ -149,7 +173,18 @@ void UConquerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	const APawn* Pawn = TryGetPawnOwner();
-	GroundSpeed = Pawn ? Pawn->GetVelocity().Size2D() : 0.f;
+	if (!Pawn)
+	{
+		GroundSpeed = 0.f;
+		return;
+	}
+	const FVector Velocity = Pawn->GetVelocity();
+	GroundSpeed = Velocity.Size2D();
+	if (GroundSpeed > 1.f)
+	{
+		const FVector Local = Pawn->GetActorRotation().UnrotateVector(Velocity);
+		MoveDirection = FMath::RadiansToDegrees(FMath::Atan2(Local.Y, Local.X));
+	}
 }
 
 FAnimInstanceProxy* UConquerAnimInstance::CreateAnimInstanceProxy()
