@@ -2,6 +2,7 @@
 #include "ConquerCharacterBase.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
+#include "ConquerGameMode.h"
 #include "Conquer.h"
 #include "EngineUtils.h"
 #include "DrawDebugHelpers.h"
@@ -42,6 +43,22 @@ UCombatComponent::UCombatComponent()
 	ThrustAttack.StaminaCost = 0.f;
 	ThrustAttack.Range = 200.f;
 	ThrustAttack.ArcHalfAngle = 35.f;
+
+	DodgeAttack.Windup = 0.12f;
+	DodgeAttack.Active = 0.1f;
+	DodgeAttack.Recovery = 0.35f;
+	DodgeAttack.Damage = 14.f;
+	DodgeAttack.StaminaCost = 6.f;
+	DodgeAttack.Range = 190.f;
+	DodgeAttack.ArcHalfAngle = 60.f;
+
+	ShotAttack.Windup = 1.1f;
+	ShotAttack.Active = 0.05f;
+	ShotAttack.Recovery = 0.8f;
+	ShotAttack.Damage = 14.f;
+	ShotAttack.StaminaCost = 0.f;
+	ShotAttack.Range = 2600.f;
+	ShotAttack.ArcHalfAngle = 180.f;
 }
 
 void UCombatComponent::BeginPlay()
@@ -61,8 +78,10 @@ const FAttackSpec& UCombatComponent::GetSpec(EAttackKind Kind) const
 	{
 	case EAttackKind::Heavy:      return HeavyAttack;
 	case EAttackKind::GuardBreak: return GuardBreakAttack;
-	case EAttackKind::Thrust:     return ThrustAttack;
-	default:                      return LightAttack;
+	case EAttackKind::Thrust:      return ThrustAttack;
+	case EAttackKind::DodgeAttack: return DodgeAttack;
+	case EAttackKind::Shot:        return ShotAttack;
+	default:                       return LightAttack;
 	}
 }
 
@@ -95,9 +114,27 @@ void UCombatComponent::SetGuardDirection(EGuardDirection NewDirection)
 	GuardDirection = NewDirection;
 }
 
+void UCombatComponent::NotifyGuardInput()
+{
+	LastGuardInputTime = GetWorld()->GetTimeSeconds();
+}
+
+EGuardDirection UCombatComponent::SideFrom(const AActor* Defender, const FVector& FromLocation)
+{
+	const FVector Local = Defender->GetActorTransform().InverseTransformPositionNoScale(FromLocation);
+	const float Angle = FMath::RadiansToDegrees(FMath::Atan2(Local.Y, Local.X));
+	if (FMath::Abs(Angle) <= 45.f)
+	{
+		return EGuardDirection::Top;
+	}
+	return Angle > 0.f ? EGuardDirection::Right : EGuardDirection::Left;
+}
+
 bool UCombatComponent::StartAttack(EAttackKind Kind, EGuardDirection Direction)
 {
-	if (!CanStartAttack())
+	// A dodge attack comes out of a dodge; everything else waits for the owner to be free.
+	const bool bFromDodge = Kind == EAttackKind::DodgeAttack;
+	if (bFromDodge ? (!CanDodgeAttack() || !OwnerCharacter || OwnerCharacter->IsDead()) : !CanStartAttack())
 	{
 		return false;
 	}
@@ -106,6 +143,12 @@ bool UCombatComponent::StartAttack(EAttackKind Kind, EGuardDirection Direction)
 	if (!OwnerCharacter->GetAttributes()->TrySpendStamina(Spec.StaminaCost))
 	{
 		return false;
+	}
+	if (bFromDodge)
+	{
+		DodgeTimeLeft = 0.f;
+		DodgeAttackWindowLeft = 0.f;
+		OwnerCharacter->LaunchCharacter(OwnerCharacter->GetActorForwardVector().GetSafeNormal2D() * DodgeAttackLunge, true, false);
 	}
 
 	StopAttackMontage();
@@ -129,9 +172,26 @@ bool UCombatComponent::Feint()
 	return true;
 }
 
+bool UCombatComponent::CanDodgeCancel() const
+{
+	switch (Phase)
+	{
+	case EAttackPhase::None:
+		return true;
+	case EAttackPhase::Windup:
+		// A heavy can be pulled out of before its commit point; a light is too quick to bother.
+		return AttackKind == EAttackKind::Heavy && PhaseElapsed < HeavyAttack.Windup * HeavyCommitFraction;
+	case EAttackPhase::Recovery:
+		// A light's follow-through can be cut short; a whiffed heavy or guard break is punishable.
+		return AttackKind == EAttackKind::Light || AttackKind == EAttackKind::DodgeAttack;
+	default:
+		return false;
+	}
+}
+
 bool UCombatComponent::Dodge(const FVector& WorldDirection)
 {
-	if (IsStaggered() || IsDodging() || Phase == EAttackPhase::Active || !OwnerCharacter || OwnerCharacter->IsDead())
+	if (IsStaggered() || IsDodging() || !CanDodgeCancel() || !OwnerCharacter || OwnerCharacter->IsDead())
 	{
 		return false;
 	}
@@ -140,7 +200,6 @@ bool UCombatComponent::Dodge(const FVector& WorldDirection)
 		return false;
 	}
 
-	// Dodging out of a windup or recovery is allowed: it is the main way to escape a bad commit.
 	CancelAttack();
 
 	FVector Dir = WorldDirection.GetSafeNormal2D();
@@ -148,7 +207,9 @@ bool UCombatComponent::Dodge(const FVector& WorldDirection)
 	{
 		Dir = -OwnerCharacter->GetActorForwardVector();
 	}
-	DodgeTimeLeft = DodgeInvulnerableTime;
+	DodgeTimeLeft = DodgeDuration;
+	InvulnerableTimeLeft = DodgeInvulnerableTime;
+	DodgeAttackWindowLeft = DodgeDuration + DodgeAttackWindow;
 	OwnerCharacter->LaunchCharacter(Dir * DodgeStrength, true, false);
 	PlayReaction(DodgeMontage, 1.3f);
 	return true;
@@ -193,6 +254,8 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 
 	StaggerTimeLeft = FMath::Max(0.f, StaggerTimeLeft - DeltaTime);
 	DodgeTimeLeft = FMath::Max(0.f, DodgeTimeLeft - DeltaTime);
+	InvulnerableTimeLeft = FMath::Max(0.f, InvulnerableTimeLeft - DeltaTime);
+	DodgeAttackWindowLeft = FMath::Max(0.f, DodgeAttackWindowLeft - DeltaTime);
 
 	if (Phase != EAttackPhase::None)
 	{
@@ -239,6 +302,12 @@ void UCombatComponent::ResolveActiveFrame()
 	}
 
 	const FAttackSpec& Spec = GetSpec(AttackKind);
+	if (AttackKind == EAttackKind::Shot)
+	{
+		OwnerCharacter->FireProjectile(Spec);
+		return;
+	}
+
 	const FVector Origin = OwnerCharacter->GetActorLocation();
 	const FVector Forward = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
 	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(Spec.ArcHalfAngle));
@@ -285,16 +354,28 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		return EHitOutcome::Ignored;
 	}
 
-	if (IsDodging())
+	if (IsInvulnerable())
 	{
-		return EHitOutcome::Dodged;
+		return Report(Attacker, Kind, EHitOutcome::Dodged);
 	}
 
 	const URageComponent* MyRage = OwnerCharacter->GetRage();
 	const bool bRaging = MyRage && MyRage->IsRageActive();
+	const float Now = GetWorld()->GetTimeSeconds();
 
 	if (Kind == EAttackKind::GuardBreak)
 	{
+		// Countered: the defender's own guard break started after this one and close enough to its landing.
+		UCombatComponent* TheirCombat = Attacker ? Attacker->GetCombat() : nullptr;
+		if (TheirCombat && AttackKind == EAttackKind::GuardBreak && Phase != EAttackPhase::None
+			&& AttackStartTime > TheirCombat->GetAttackStartTime() && Now - AttackStartTime <= GuardBreakCounterWindow)
+		{
+			CancelAttack();
+			TheirCombat->Stagger(TheirCombat->GuardBrokenStaggerTime);
+			TheirCombat->PlayReaction(TheirCombat->GuardBrokenMontage);
+			return Report(Attacker, Kind, EHitOutcome::Countered);
+		}
+
 		// Guard breaks beat anyone standing still or recovering; an attack already swinging wins.
 		if (Phase == EAttackPhase::Windup || Phase == EAttackPhase::Active || bRaging)
 		{
@@ -302,33 +383,49 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		}
 		Stagger(GuardBrokenStaggerTime);
 		PlayReaction(GuardBrokenMontage);
-		return EHitOutcome::GuardBroken;
+		return Report(Attacker, Kind, EHitOutcome::GuardBroken);
 	}
 
 	const bool bUnblockable = Spec.bUnblockable || bForceUnblockable;
+	const bool bFree = !IsStaggered() && (Phase == EAttackPhase::None || Phase == EAttackPhase::Recovery);
 
-	// Parry: a heavy started from the same side just before the hit lands. Rage gives up parrying.
-	const float Now = GetWorld()->GetTimeSeconds();
-	if (!bRaging && Phase == EAttackPhase::Windup && AttackKind == EAttackKind::Heavy
-		&& AttackDirection == Direction && Now - AttackStartTime <= ParryWindow)
+	// Perfect parry: guard pressed (or switched) to the blow's side just before it lands.
+	if (bCanPerfectParry && !bUnblockable && bFree && GuardDirection == Direction && Now - LastGuardInputTime <= PerfectParryWindow)
 	{
-		CancelAttack();
-		if (Attacker)
+		// Arrows are deflected; a sword arm is knocked wide and left open.
+		if (Attacker && Kind != EAttackKind::Shot)
 		{
-			Attacker->GetCombat()->Stagger(ParriedStaggerTime);
-			Attacker->GetCombat()->PlayReaction(Attacker->GetCombat()->GuardBrokenMontage);
+			UCombatComponent* TheirCombat = Attacker->GetCombat();
+			TheirCombat->Stagger(TheirCombat->ParriedStaggerTime);
+			TheirCombat->PlayReaction(TheirCombat->GuardBrokenMontage);
 		}
-		return EHitOutcome::Parried;
+		if (URageComponent* Rage = OwnerCharacter->GetRage())
+		{
+			Rage->AddRage(ParryRage);
+		}
+		LastGuardInputTime = -100.f;
+		return Report(Attacker, Kind, EHitOutcome::Parried);
 	}
 
-	// Block: guard raised on the matching side and not mid-attack.
-	const bool bCanBlock = bGuardRaised && !bRaging && !IsStaggered()
-		&& (Phase == EAttackPhase::None || Phase == EAttackPhase::Recovery);
-	if (!bUnblockable && bCanBlock && (GuardDirection == Direction || bBlockAllDirections))
+	// A shield guard's shield stops anything from in front, whichever side it comes from.
+	if (bFrontalShield && !bUnblockable && Attacker && !IsStaggered() && Phase != EAttackPhase::Active)
 	{
-		OwnerCharacter->GetAttributes()->DrainStamina(BlockStaminaDrain);
+		const FVector ToAttacker = (Attacker->GetActorLocation() - OwnerCharacter->GetActorLocation()).GetSafeNormal2D();
+		const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(FrontalShieldHalfAngle));
+		if (FVector::DotProduct(OwnerCharacter->GetActorForwardVector().GetSafeNormal2D(), ToAttacker) >= CosHalfAngle)
+		{
+			OwnerCharacter->GetAttributes()->DrainStamina(BlockStaminaDrain * 0.5f);
+			PlayReaction(BlockMontage, 1.5f);
+			return Report(Attacker, Kind, EHitOutcome::Blocked);
+		}
+	}
+
+	// Block: guard raised on the matching side and not mid-attack. Costs stamina, more for a heavy.
+	if (!bUnblockable && bGuardRaised && !bRaging && bFree && (GuardDirection == Direction || bBlockAllDirections))
+	{
+		OwnerCharacter->GetAttributes()->DrainStamina(BlockStaminaDrain * (Kind == EAttackKind::Heavy ? 2.f : 1.f));
 		PlayReaction(BlockMontage, 1.5f);
-		return EHitOutcome::Blocked;
+		return Report(Attacker, Kind, EHitOutcome::Blocked);
 	}
 
 	const float Damage = Spec.Damage * DamageMultiplier;
@@ -338,7 +435,74 @@ EHitOutcome UCombatComponent::ReceiveAttack(AConquerCharacterBase* Attacker, con
 		Stagger(Kind == EAttackKind::Heavy ? HitStaggerTime * 1.6f : HitStaggerTime);
 		PlayReaction(Kind == EAttackKind::Heavy ? HeavyHitReactMontage : HitReactMontage);
 	}
-	return EHitOutcome::Hit;
+	return Report(Attacker, Kind, EHitOutcome::Hit);
+}
+
+EHitOutcome UCombatComponent::Report(AConquerCharacterBase* Attacker, EAttackKind Kind, EHitOutcome Outcome)
+{
+	const bool bPlayerDefends = OwnerCharacter && OwnerCharacter->IsPlayerTeam();
+	const bool bPlayerAttacks = Attacker && Attacker->IsPlayerTeam();
+	AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
+	if (!GameMode || (!bPlayerDefends && !bPlayerAttacks))
+	{
+		return Outcome;
+	}
+	GameMode->LastPlayerOutcome = Outcome;
+	++GameMode->PlayerOutcomes;
+
+	UE_LOG(LogConquer, Log, TEXT("Combat: %s's %s on %s: %s"), Attacker ? *Attacker->GetName() : TEXT("someone"),
+		*UEnum::GetDisplayValueAsText(Kind).ToString(), *OwnerCharacter->GetName(), *UEnum::GetDisplayValueAsText(Outcome).ToString());
+
+	switch (Outcome)
+	{
+	case EHitOutcome::Parried:
+		GameMode->HitStop(0.14f);
+		GameMode->Flash(FLinearColor(1.f, 0.82f, 0.4f, 0.3f), 0.25f);
+		GameMode->ShowCallout(Kind == EAttackKind::Shot ? TEXT("DEFLECTED") : TEXT("PARRIED"));
+		GameMode->ShowFirstTimeHint(TEXT("Parried"), Kind == EAttackKind::Shot
+			? TEXT("Deflected. Close the distance before he draws again")
+			: TEXT("Parried: he reels. Punish him now"));
+		break;
+	case EHitOutcome::Countered:
+		GameMode->HitStop(0.12f);
+		GameMode->Flash(FLinearColor(0.4f, 0.8f, 1.f, 0.25f), 0.25f);
+		GameMode->ShowCallout(TEXT("COUNTERED"));
+		GameMode->ShowFirstTimeHint(TEXT("Countered"), TEXT("Countered his guard break: he's open"));
+		break;
+	case EHitOutcome::GuardBroken:
+		GameMode->HitStop(0.08f);
+		if (bPlayerAttacks)
+		{
+			GameMode->ShowCallout(TEXT("GUARD BROKEN"));
+			GameMode->ShowFirstTimeHint(TEXT("GuardBroken"), TEXT("His guard is broken: strike before he recovers"));
+		}
+		else
+		{
+			GameMode->ShowFirstTimeHint(TEXT("WasGuardBroken"), TEXT("Counter a guard break: press E / X as his grab comes in (it flashes blue)"));
+		}
+		break;
+	case EHitOutcome::Blocked:
+		if (bPlayerDefends)
+		{
+			GameMode->ShowFirstTimeHint(TEXT("Blocked"), TEXT("Blocked, at a cost in stamina. Tap Guard (F / LB) just as a blow lands to parry it"));
+		}
+		break;
+	case EHitOutcome::Dodged:
+		if (bPlayerDefends)
+		{
+			GameMode->ShowFirstTimeHint(TEXT("Dodged"), TEXT("Attack (LMB / RB) straight out of a dodge to lunge"));
+		}
+		break;
+	case EHitOutcome::Hit:
+		if (bPlayerAttacks && (Kind == EAttackKind::Heavy || Kind == EAttackKind::DodgeAttack))
+		{
+			GameMode->HitStop(0.06f);
+		}
+		break;
+	default:
+		break;
+	}
+	return Outcome;
 }
 
 void UCombatComponent::PlayAttackMontage()

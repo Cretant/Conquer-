@@ -39,9 +39,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool Feint();
 
-	/** Dashes in a world direction with brief invulnerability. */
+	/** Dashes in a world direction with brief invulnerability. Cancels a light's recovery or an uncommitted heavy. */
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool Dodge(const FVector& WorldDirection);
+
+	/** Whether a dodge may interrupt what the owner is doing now. */
+	bool CanDodgeCancel() const;
+
+	/** A light pressed now becomes a dodge attack. */
+	bool CanDodgeAttack() const { return DodgeAttackWindowLeft > 0.f && !IsStaggered(); }
+
+	/** The defender just pressed guard or switched guard side: a hit landing in the next moment is parried. */
+	void NotifyGuardInput();
 
 	/** Interrupts whatever the owner is doing and leaves them open for a moment. */
 	UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -76,6 +85,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsDodging() const { return DodgeTimeLeft > 0.f; }
 
+	/** The first part of a dodge, when hits pass through. */
+	bool IsInvulnerable() const { return InvulnerableTimeLeft > 0.f; }
+
+	float GetAttackStartTime() const { return AttackStartTime; }
+
+	/** A frontal shield is up (shield guards): blocks from the front until a guard break or stagger. */
+	bool IsShieldUp() const { return bFrontalShield && !IsStaggered(); }
+
+	/** Which of the defender's sides a blow or arrow from this location arrives on. */
+	static EGuardDirection SideFrom(const AActor* Defender, const FVector& FromLocation);
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool CanStartAttack() const;
 
@@ -102,6 +122,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
 	FAttackSpec ThrustAttack;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
+	FAttackSpec DodgeAttack;
+
+	/** Archers: Range is how far they shoot; the arrow does the damage. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Attacks")
+	FAttackSpec ShotAttack;
+
 	/** Whether this character can block at all right now (the player only blocks while locked on). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
 	bool bGuardRaised = true;
@@ -110,12 +137,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
 	bool bBlockAllDirections = false;
 
-	/** A heavy started this soon before an incoming hit, from the same side, parries it. */
+	/** Only the player parries: guard input on the right side this soon before a hit lands. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
-	float ParryWindow = 0.3f;
+	bool bCanPerfectParry = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	float PerfectParryWindow = 0.15f;
+
+	/** Rage gained for a parry. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	float ParryRage = 25.f;
+
+	/** Starting your own guard break after theirs started (and no more than this before yours lands) counters it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	float GuardBreakCounterWindow = 0.4f;
+
+	/** Stamina a blocked light costs; heavies cost twice as much. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
 	float BlockStaminaDrain = 8.f;
+
+	/** Shield guards: blocks every blockable hit from in front, whatever the side. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	bool bFrontalShield = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
+	float FrontalShieldHalfAngle = 70.f;
 
 	/** Ignores flinches from normal hits. Set during Rage and on heavily armoured enemies. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Defence")
@@ -133,8 +179,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
 	float DodgeStaminaCost = 15.f;
 
+	/** How long a dodge lasts; the i-frames are its first part. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
-	float DodgeInvulnerableTime = 0.3f;
+	float DodgeDuration = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	float DodgeInvulnerableTime = 0.25f;
+
+	/** A heavy can be dodged out of until this much of its windup has passed (its commit point). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	float HeavyCommitFraction = 0.6f;
+
+	/** A light pressed during a dodge or this soon after becomes a dodge attack. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	float DodgeAttackWindow = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	float DodgeAttackLunge = 900.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
 	float DodgeStrength = 1400.f;
@@ -173,6 +234,9 @@ private:
 
 	AConquerCharacterBase* GetOwnerCharacter() const;
 
+	/** Hit-stop, flash, callout and first-time hints for blows the player gives or takes. */
+	EHitOutcome Report(AConquerCharacterBase* Attacker, EAttackKind Kind, EHitOutcome Outcome);
+
 	UPROPERTY(Transient)
 	TObjectPtr<AConquerCharacterBase> OwnerCharacter;
 
@@ -186,4 +250,7 @@ private:
 	int32 AttackSerial = 0;
 	float StaggerTimeLeft = 0.f;
 	float DodgeTimeLeft = 0.f;
+	float InvulnerableTimeLeft = 0.f;
+	float DodgeAttackWindowLeft = 0.f;
+	float LastGuardInputTime = -100.f;
 };

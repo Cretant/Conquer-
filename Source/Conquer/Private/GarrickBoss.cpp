@@ -17,6 +17,9 @@ AGarrickBoss::AGarrickBoss()
 	Attributes->MaxHealth = 600.f;
 	Combat->bHyperArmor = false;
 	Combat->HitStaggerTime = 0.25f;
+	// His windows: a parried swing leaves him open a long moment; his guard break is slow enough to counter.
+	Combat->ParriedStaggerTime = 1.4f;
+	Combat->GuardBreakAttack.Windup = 0.45f;
 	Combat->LightAttack.Damage = 14.f;
 	Combat->LightAttack.Windup = 0.45f;
 	GetCharacterMovement()->MaxWalkSpeed = 260.f;

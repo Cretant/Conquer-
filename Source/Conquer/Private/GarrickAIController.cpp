@@ -33,6 +33,13 @@ bool AGarrickAIController::TryAttack(AEnemySoldier* Me, AConquerCharacterBase* T
 			return false;
 		}
 
+		// Against a raised guard he sometimes grabs for it: the blue tell she can counter.
+		if (Target->GetCombat()->bGuardRaised && FMath::FRand() < 0.25f && MyCombat->StartAttack(EAttackKind::GuardBreak, EGuardDirection::Top))
+		{
+			AttackCooldown = 0.35f;
+			return false;
+		}
+
 		const float Roll = FMath::FRand();
 		if (Roll < 0.45f)
 		{
@@ -65,6 +72,11 @@ bool AGarrickAIController::TryAttack(AEnemySoldier* Me, AConquerCharacterBase* T
 	}
 	if (Dist > Me->EngageRange + 60.f)
 	{
+		return false;
+	}
+	if (Target->GetCombat()->bGuardRaised && FMath::FRand() < 0.15f && MyCombat->StartAttack(EAttackKind::GuardBreak, EGuardDirection::Top))
+	{
+		AttackCooldown = 0.3f;
 		return false;
 	}
 	const EGuardDirection Side = Me->AttackDirections[FMath::RandRange(0, Me->AttackDirections.Num() - 1)];

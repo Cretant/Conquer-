@@ -74,7 +74,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Encounter")
 	TArray<FVector> SpawnPoints;
 
-	/** Shown once when the fight starts, e.g. the control it teaches. */
+	/** Shown when the fight starts, e.g. the controls it teaches; several hints separated by | follow each other. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Encounter")
 	FString StartHint;
 

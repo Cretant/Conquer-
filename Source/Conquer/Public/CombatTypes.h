@@ -21,7 +21,11 @@ enum class EAttackKind : uint8
 	Heavy,
 	GuardBreak,
 	/** A charging lunge; only bosses use it. */
-	Thrust
+	Thrust,
+	/** A quick lunge straight out of a dodge. */
+	DodgeAttack,
+	/** A bow shot: the windup draws, the active frame looses an arrow. */
+	Shot
 };
 
 /** An attack moves through windup (readable, can be parried or feinted), active (deals the hit) and recovery. */
@@ -42,6 +46,8 @@ enum class EHitOutcome : uint8
 	Parried,
 	Dodged,
 	GuardBroken,
+	/** A guard break met by the defender's own, timed just after it: the attacker is the one left open. */
+	Countered,
 	Ignored
 };
 

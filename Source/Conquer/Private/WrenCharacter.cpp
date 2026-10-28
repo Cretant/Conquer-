@@ -3,6 +3,7 @@
 #include "AttributesComponent.h"
 #include "RageComponent.h"
 #include "ConquerGameMode.h"
+#include "ArrowProjectile.h"
 #include "Conquer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -39,6 +40,7 @@ AWrenCharacter::AWrenCharacter()
 	Rage->bEnabled = true;
 	Attributes->MaxHealth = 150.f;
 	Combat->bGuardRaised = false;
+	Combat->bCanPerfectParry = true;
 }
 
 void AWrenCharacter::BeginPlay()
@@ -146,6 +148,7 @@ void AWrenCharacter::BuildInput()
 	DodgeAction      = MakeAction(TEXT("IA_Dodge"), EInputActionValueType::Boolean);
 	LockAction       = MakeAction(TEXT("IA_LockOn"), EInputActionValueType::Boolean);
 	RageAction       = MakeAction(TEXT("IA_Rage"), EInputActionValueType::Boolean);
+	GuardAction      = MakeAction(TEXT("IA_Guard"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Wren"));
 
@@ -179,6 +182,8 @@ void AWrenCharacter::BuildInput()
 	MappingContext->MapKey(LockAction, EKeys::Gamepad_LeftTrigger);
 	MappingContext->MapKey(RageAction, EKeys::R);
 	MappingContext->MapKey(RageAction, EKeys::Gamepad_FaceButton_Top);
+	MappingContext->MapKey(GuardAction, EKeys::F);
+	MappingContext->MapKey(GuardAction, EKeys::Gamepad_LeftShoulder);
 }
 
 void AWrenCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -212,6 +217,8 @@ void AWrenCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	Input->BindAction(DodgeAction, ETriggerEvent::Started, this, &AWrenCharacter::OnDodge);
 	Input->BindAction(LockAction, ETriggerEvent::Started, this, &AWrenCharacter::OnToggleLock);
 	Input->BindAction(RageAction, ETriggerEvent::Started, this, &AWrenCharacter::OnRage);
+	Input->BindAction(GuardAction, ETriggerEvent::Started, this, &AWrenCharacter::OnGuardPressed);
+	Input->BindAction(GuardAction, ETriggerEvent::Completed, this, &AWrenCharacter::OnGuardReleased);
 }
 
 void AWrenCharacter::OnMove(const FInputActionValue& Value)
@@ -240,6 +247,7 @@ void AWrenCharacter::OnLook(const FInputActionValue& Value)
 		GuardAccumulator += Look;
 		if (GuardAccumulator.Size() >= GuardSwitchThreshold)
 		{
+			const EGuardDirection Before = Combat->GetGuardDirection();
 			if (FMath::Abs(GuardAccumulator.X) > FMath::Abs(GuardAccumulator.Y))
 			{
 				Combat->SetGuardDirection(GuardAccumulator.X < 0.f ? EGuardDirection::Left : EGuardDirection::Right);
@@ -247,6 +255,11 @@ void AWrenCharacter::OnLook(const FInputActionValue& Value)
 			else if (GuardAccumulator.Y > 0.f)
 			{
 				Combat->SetGuardDirection(EGuardDirection::Top);
+			}
+			// Switching to a side is a guard input, so a well-timed flick parries.
+			if (Combat->GetGuardDirection() != Before)
+			{
+				Combat->NotifyGuardInput();
 			}
 			GuardAccumulator = FVector2D::ZeroVector;
 		}
@@ -257,7 +270,7 @@ void AWrenCharacter::OnLook(const FInputActionValue& Value)
 	AddControllerPitchInput(-Look.Y);
 }
 
-void AWrenCharacter::OnLight()      { Attack(EAttackKind::Light); }
+void AWrenCharacter::OnLight()      { Attack(Combat->CanDodgeAttack() ? EAttackKind::DodgeAttack : EAttackKind::Light); }
 void AWrenCharacter::OnGuardBreak() { Attack(EAttackKind::GuardBreak); }
 void AWrenCharacter::OnFeint()      { Combat->Feint(); }
 void AWrenCharacter::OnRage()       { Rage->TryActivate(); }
@@ -272,13 +285,83 @@ void AWrenCharacter::OnHeavy()
 
 void AWrenCharacter::OnDodge()
 {
+	TryDodge();
+}
+
+bool AWrenCharacter::TryDodge()
+{
 	FVector Dir = FVector::ZeroVector;
 	if (Controller && !MoveInput.IsNearlyZero())
 	{
 		const FRotator YawOnly(0.f, Controller->GetControlRotation().Yaw, 0.f);
 		Dir = FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X) * MoveInput.Y + FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y) * MoveInput.X;
 	}
-	Combat->Dodge(Dir);
+	const bool bWasAttacking = Combat->GetPhase() != EAttackPhase::None;
+	if (!Combat->Dodge(Dir))
+	{
+		return false;
+	}
+	if (bWasAttacking)
+	{
+		if (AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>())
+		{
+			GameMode->ShowFirstTimeHint(TEXT("DodgeCancel"), TEXT("Dodge cuts a light attack's follow-through short, and pulls her out of a heavy before it commits"));
+		}
+	}
+	return true;
+}
+
+void AWrenCharacter::SetGuardHeld(bool bHeld)
+{
+	bGuardHeld = bHeld;
+	if (bHeld)
+	{
+		if (!LockTarget)
+		{
+			Combat->SetGuardDirection(SideOfNearestThreat());
+		}
+		Combat->NotifyGuardInput();
+	}
+	UpdateGuard();
+}
+
+void AWrenCharacter::UpdateGuard()
+{
+	Combat->bGuardRaised = LockTarget != nullptr || bGuardHeld;
+}
+
+EGuardDirection AWrenCharacter::SideOfNearestThreat() const
+{
+	EGuardDirection Side = Combat->GetGuardDirection();
+	float Nearest = BIG_NUMBER;
+
+	for (TActorIterator<AConquerCharacterBase> It(GetWorld()); It; ++It)
+	{
+		const AConquerCharacterBase* Enemy = *It;
+		const EAttackPhase Phase = Enemy->GetCombat()->GetPhase();
+		if (Enemy->IsPlayerTeam() || Enemy->IsDead() || (Phase != EAttackPhase::Windup && Phase != EAttackPhase::Active)
+			|| Enemy->GetCombat()->GetAttackKind() == EAttackKind::Shot)
+		{
+			continue;
+		}
+		const float Dist = FVector::Dist2D(Enemy->GetActorLocation(), GetActorLocation());
+		if (Dist < 600.f && Dist < Nearest)
+		{
+			Nearest = Dist;
+			Side = Enemy->GetCombat()->GetAttackDirection();
+		}
+	}
+	for (TActorIterator<AArrowProjectile> It(GetWorld()); It; ++It)
+	{
+		const FVector ToMe = GetActorLocation() - It->GetActorLocation();
+		const float Dist = ToMe.Size2D();
+		if (Dist < 1500.f && FVector::DotProduct(It->GetVelocity().GetSafeNormal2D(), ToMe.GetSafeNormal2D()) > 0.8f && Dist * 0.5f < Nearest)
+		{
+			Nearest = Dist * 0.5f;
+			Side = UCombatComponent::SideFrom(this, It->GetActorLocation());
+		}
+	}
+	return Side;
 }
 
 void AWrenCharacter::OnToggleLock()
@@ -380,7 +463,7 @@ AConquerCharacterBase* AWrenCharacter::FindBestTarget(float MaxRange) const
 void AWrenCharacter::SetLockTarget(AConquerCharacterBase* NewTarget)
 {
 	LockTarget = NewTarget;
-	Combat->bGuardRaised = LockTarget != nullptr;
+	UpdateGuard();
 	GuardAccumulator = FVector2D::ZeroVector;
 	UpdateMovementMode();
 }
@@ -408,6 +491,12 @@ void AWrenCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	GuardAccumulator *= 0.85f;
+
+	// Holding guard out of lock-on, she keeps turning it to meet the next blow.
+	if (bGuardHeld && !LockTarget)
+	{
+		Combat->SetGuardDirection(SideOfNearestThreat());
+	}
 
 	if (LockTarget && (LockTarget->IsDead() || FVector::Dist(LockTarget->GetActorLocation(), GetActorLocation()) > LockOnRange * 1.2f))
 	{

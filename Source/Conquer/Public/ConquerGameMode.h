@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "CombatTypes.h"
 #include "ConquerGameMode.generated.h"
 
 class AEnemySoldier;
@@ -59,6 +60,28 @@ public:
 	// What the HUD draws over the game: a centred banner, a hint line, letterbox bars and a fade to black.
 	void ShowBanner(const FString& Text, float Duration = 3.f);
 	void ShowHint(const FString& Text, float Duration = 6.f);
+
+	/** Shows the hint after any hint already up has had its time. */
+	void QueueHint(const FString& Text, float Duration = 6.f);
+
+	/** Queues a hint the first time Key comes up in this level, and never again. */
+	void ShowFirstTimeHint(FName Key, const FString& Text, float Duration = 7.f);
+
+	/** An enemy just entered the fight: the first of each kind brings its hint. */
+	void NotifyEnemySpawned(AEnemySoldier* Enemy);
+
+	/** Freezes the world for a moment of real time so a big hit lands. */
+	void HitStop(float RealSeconds);
+
+	/** Washes the screen with a colour (its alpha is the strength), fading out over Seconds. */
+	void Flash(const FLinearColor& Color, float Seconds);
+
+	/** A word in the middle of the screen for a moment: PARRIED, GUARD BROKEN... */
+	void ShowCallout(const FString& Text);
+
+	const FString& GetCallout() const { return Callout; }
+	float GetCalloutAlpha() const;
+	FLinearColor GetFlash() const;
 	const FString& GetBanner() const { return Banner; }
 	const FString& GetHint() const { return Hint; }
 	float GetBannerAlpha() const { return MessageAlpha(BannerStart, BannerEnd); }
@@ -67,6 +90,10 @@ public:
 	/** The full controls list in the corner; levels that teach controls as they go turn it off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
 	bool bShowControlsHint = true;
+
+	/** The last blow the player gave or took, and how many so far (for headless tests). */
+	EHitOutcome LastPlayerOutcome = EHitOutcome::Ignored;
+	int32 PlayerOutcomes = 0;
 
 	/** 0 shows the game, 1 is black. */
 	float FadeAlpha = 0.f;
@@ -97,6 +124,15 @@ private:
 	FTimerHandle ShotTimer;
 
 	float MessageAlpha(float Start, float End) const;
+	void ShowNextHint();
+	TArray<TPair<FString, float>> PendingHints;
+	TSet<FName> HintsShown;
+	FTimerHandle HintTimer;
+	FTimerHandle HitStopTimer;
+	FString Callout;
+	float CalloutStart = -100.f;
+	FLinearColor FlashColor = FLinearColor::Transparent;
+	float FlashStart = -100.f, FlashSeconds = 0.f;
 	FString Banner;
 	FString Hint;
 	float BannerStart = 0.f, BannerEnd = 0.f;

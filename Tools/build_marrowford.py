@@ -2,7 +2,7 @@
 burning village, the square (with a side path to the smithy), the river and its mill bridge, and the village gate
 in the north-east. Run by MarrowfordGameMode, which plays the opening and runs the fights.
 
-Also imports the pitchfork (Art/Weapons/SM_Pitchfork.fbx, from Tools/make_pitchfork.py).
+Also imports the pitchfork and the archers' bow (Art/Weapons, from Tools/make_pitchfork.py and make_bow.py).
 
 Axes: +X is north, +Y is east, 1 unit = 1 cm; the map is 150 m north to south and 250 m west to east.
 
@@ -289,30 +289,30 @@ def pickup(kind, amount, label, location, mesh, size, material):
     return actor
 
 
-def import_pitchfork():
-    folder = FOLDER + "/Pitchfork"
+def import_weapon(name, slots):
+    """Imports Art/Weapons/<name>.fbx into its own folder and gives its slots our material instances."""
+    folder = FOLDER + "/" + name[len("SM_"):]
     task = unreal.AssetImportTask()
-    task.filename = os.path.join(REPO, "Art", "Weapons", "SM_Pitchfork.fbx")
+    task.filename = os.path.join(REPO, "Art", "Weapons", name + ".fbx")
     task.destination_path = folder
-    task.destination_name = "SM_Pitchfork"
+    task.destination_name = name
     task.replace_existing = True
     task.automated = True
     task.save = False
     tools.import_asset_tasks([task])
-    mesh = assets.load_asset(folder + "/SM_Pitchfork")
+    mesh = assets.load_asset(folder + "/" + name)
     if not mesh:
-        raise RuntimeError("pitchfork import failed")
-    slots = {"Wood": tinted("MI_Wood", (0.30, 0.19, 0.10), 0.0, 0.8), "Iron": tinted("MI_ForkIron", (0.22, 0.22, 0.23), 1.0, 0.55)}
+        raise RuntimeError(name + " import failed")
     for i, slot in enumerate(mesh.get_editor_property("static_materials")):
-        name = str(slot.get_editor_property("material_slot_name"))
-        match = next((m for key, m in slots.items() if name.startswith(key)), None)
+        slot_name = str(slot.get_editor_property("material_slot_name"))
+        match = next((m for key, m in slots.items() if slot_name.startswith(key)), None)
         if match:
             mesh.set_material(i, match)
     for asset_path in assets.list_assets(folder, recursive=False):
         # Interchange also imports the FBX's own materials; the instances above replace them.
         if assets.find_asset_data(asset_path).asset_class_path.asset_name == "Material":
             assets.delete_asset(asset_path)
-    assets.save_asset(folder + "/SM_Pitchfork", only_if_is_dirty=False)
+    assets.save_asset(folder + "/" + name, only_if_is_dirty=False)
     return mesh
 
 
@@ -335,7 +335,11 @@ LEAVES = tinted("MI_Leaves", (0.03, 0.05, 0.025), 0.0, 0.9)
 WATER = tinted("MI_Water", (0.02, 0.04, 0.06), 0.0, 0.05)
 FIRE = glowing("M_Fire", (1.0, 0.32, 0.05), 6.0)
 SMOKE = glowing("M_Smoke", (0.05, 0.045, 0.04), 1.0, translucent_opacity=0.2)
-pitchfork = import_pitchfork()
+pitchfork = import_weapon("SM_Pitchfork", {"Wood": tinted("MI_Wood", (0.30, 0.19, 0.10), 0.0, 0.8),
+                                           "Iron": tinted("MI_ForkIron", (0.22, 0.22, 0.23), 1.0, 0.55)})
+# The archers' bow (Tools/make_bow.py).
+import_weapon("SM_Bow", {"Wood": tinted("MI_BowWood", (0.25, 0.15, 0.07), 0.0, 0.8),
+                         "String": tinted("MI_BowString", (0.75, 0.72, 0.62), 0.0, 0.8)})
 
 if assets.does_asset_exist(MAP):
     assets.delete_asset(MAP)
@@ -550,19 +554,25 @@ camera("IntroCam5", (2250, 2600, 200), (WREN[0], WREN[1], 110), focal=28.0)
 
 # The fights, in order, and the checkpoints before the gauntlet and the boss.
 SOLDIER_CLASS = unreal.load_class(None, "/Script/Conquer.EnemySoldier")
+SHIELD = unreal.load_class(None, "/Script/Conquer.ShieldSoldier")
+ARCHER = unreal.load_class(None, "/Script/Conquer.ArcherSoldier")
+NOW = 99   # a wave that comes in with the one before it
 captain = unreal.load_class(None, "/Script/Conquer.EnemyCaptain")
 encounter("The Lane", (5000, 5700, 200), (700, 700, 250),
           [(1, None, 0, 0.5), (1, None, 0, 1.5), (1, None, 0, 1.5)],
           [(6000, 7600), (6300, 8300), (5800, 7200)],
-          hint="Light attack   LMB / RB")
+          hint="Light attack   LMB / RB|Tap Guard (F / LB) just as a blow lands to parry it|"
+               "Dodge (Space / A) out of trouble, then attack to lunge")
 encounter("The Burning Square", (7800, 12200, 200), (1300, 1300, 250),
-          [(5, None, 0, 0.5), (2, None, 3, 1.0)],
-          [(9300, 12200), (7800, 13700), (6400, 12900), (9000, 13400), (6700, 11600), (9300, 11200), (8800, 14100)],
-          hint="Dodge   Space / A          Heavy on a staggered, wounded soldier executes him and heals her")
+          [(4, None, 0, 0.5), (1, SHIELD, 3, 1.0), (1, ARCHER, NOW, 0.5), (1, None, 2, 1.0), (1, ARCHER, NOW, 0.5)],
+          [(9300, 12200), (7800, 13700), (6400, 12900), (9000, 13400), (9500, 11000), (6700, 11600), (9300, 13900)],
+          hint="Heavy on a staggered, wounded soldier executes him and heals her|"
+               "Guard break (E / X) throws a guarding soldier open; press it as his own grab comes in to counter")
 trigger(unreal.LevelTrigger.CHECKPOINT, 1, "Before the bridge", (9500, 16300, 120), (400, 450, 200), 90)
 encounter("The Mill Bridge", (9500, 17750, 200), (260, 260, 250),
-          [(3, None, 0, 0.5), (3, None, 1, 1.0), (2, None, 1, 1.0)],
-          [(9500, 20000), (9250, 20350), (9750, 20350)],
+          [(2, None, 0, 0.5), (1, ARCHER, NOW, 0.3), (1, SHIELD, 1, 1.0), (1, None, NOW, 0.3), (2, None, 1, 1.0),
+           (1, ARCHER, NOW, 0.3)],
+          [(9500, 20000), (9250, 20350), (9750, 20900), (9500, 20300), (9300, 20500), (9700, 20500), (9400, 21200)],
           hint="Every swing and dodge costs stamina: watch the yellow bar",
           close=bridge_back)
 trigger(unreal.LevelTrigger.CHECKPOINT, 2, "Before the gate", (10600, 20700, 120), (400, 400, 200), 45)
@@ -570,7 +580,8 @@ pickup(unreal.PickupKind.HEALTH, 60, "Bread and water: health restored", (10350,
 encounter("The Gate Captain", (11900, 22100, 200), (600, 600, 250),
           [(1, captain, 0, 0.5)],
           [(12450, 22450)],
-          hint="Lock on   Tab / LT, then move the mouse to pick your guard side.   Heavy into his swing parries it",
+          hint="Lock on   Tab / LT, then move the mouse to pick your guard side; a flick to his side as he strikes parries|"
+               "His grab flashes blue: guard break (E / X) as it comes to counter it",
           boss=True, open_=portcullis)
 trigger(unreal.LevelTrigger.LEVEL_EXIT, 0, "Out of Marrowford", (13800, 23800, 200), (450, 450, 250), 45)
 

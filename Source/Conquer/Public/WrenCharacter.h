@@ -46,6 +46,15 @@ public:
 	/** Switches Rage on for good and unleashes it at once (the gate captain fight). */
 	void UnlockRage();
 
+	/**
+	 * The guard button (F / LB). Pressing it is a guard input: a blow landing on that side within the parry window is
+	 * parried. Held, she blocks. Out of lock-on her guard turns to whatever is about to hit her.
+	 */
+	void SetGuardHeld(bool bHeld);
+
+	/** Starts a dodge as the dodge button does (towards her movement input, or backwards). */
+	bool TryDodge();
+
 	/** Shows or hides the weapon in her hand (the opening starts her empty-handed). */
 	void ShowWeapon(bool bShow);
 
@@ -105,6 +114,12 @@ private:
 	void OnDodge();
 	void OnToggleLock();
 	void OnRage();
+	void OnGuardPressed() { SetGuardHeld(true); }
+	void OnGuardReleased() { SetGuardHeld(false); }
+	void UpdateGuard();
+
+	/** The side the blow most about to land on her comes from: an enemy mid-swing nearby, or an arrow in flight. */
+	EGuardDirection SideOfNearestThreat() const;
 
 	UFUNCTION()
 	void HandleRageChanged(bool bActive);
@@ -131,6 +146,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UInputAction> DodgeAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> LockAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> RageAction;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> GuardAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AConquerCharacterBase> LockTarget;
@@ -147,6 +163,7 @@ private:
 
 	FAttackSpec SwordLight, SwordHeavy, SwordGuardBreak;
 	bool bPitchforkEquipped = false;
+	bool bGuardHeld = false;
 	float DamageBonus = 1.f;
 
 	FVector2D MoveInput = FVector2D::ZeroVector;

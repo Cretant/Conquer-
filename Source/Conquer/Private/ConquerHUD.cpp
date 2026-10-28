@@ -15,6 +15,7 @@ namespace
 	const FLinearColor GuardActive(1.f, 1.f, 1.f, 1.f);
 	const FLinearColor IncomingAttack(0.95f, 0.1f, 0.1f, 1.f);
 	const FLinearColor IncomingUnblockable(1.f, 0.55f, 0.f, 1.f);
+	const FLinearColor IncomingGuardBreak(0.25f, 0.8f, 1.f, 1.f);
 	const FLinearColor RageRed(0.8f, 0.05f, 0.05f, 1.f);
 
 	FVector2D SideOffset(EGuardDirection Side, float Size)
@@ -139,6 +140,19 @@ void AConquerHUD::DrawOverlay(const AConquerGameMode* GameMode)
 	const float H = Canvas->ClipY;
 	const float Scale = FMath::Max(1.f, H / 720.f);
 
+	const FLinearColor FlashColor = GameMode->GetFlash();
+	if (FlashColor.A > 0.f)
+	{
+		DrawRect(FlashColor, 0.f, 0.f, W, H);
+	}
+	if (const float Alpha = GameMode->GetCalloutAlpha(); Alpha > 0.f && !GameMode->bLetterbox)
+	{
+		float TextW = 0.f, TextH = 0.f;
+		const float CalloutScale = 1.7f * Scale;
+		GetTextSize(GameMode->GetCallout(), TextW, TextH, nullptr, CalloutScale);
+		DrawText(GameMode->GetCallout(), FLinearColor(1.f, 0.9f, 0.6f, Alpha), (W - TextW) * 0.5f, H * 0.42f - TextH * 0.5f, nullptr, CalloutScale);
+	}
+
 	if (GameMode->FadeAlpha > 0.f)
 	{
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, FMath::Clamp(GameMode->FadeAlpha, 0.f, 1.f)), 0.f, 0.f, W, H);
@@ -173,14 +187,21 @@ void AConquerHUD::DrawGuardIndicator(const FVector2D& Centre, const UCombatCompo
 	const float Box = Size * 0.55f;
 	const bool bAttacking = Combat->GetPhase() == EAttackPhase::Windup || Combat->GetPhase() == EAttackPhase::Active;
 
+	// A guard break coming: a blue flash in the middle, the cue to counter with her own.
+	if (bAttacking && Combat->GetAttackKind() == EAttackKind::GuardBreak)
+	{
+		const float S = Box * 1.8f;
+		DrawRect(IncomingGuardBreak, Centre.X - S * 0.5f, Centre.Y - S * 0.5f, S, S);
+	}
+
 	for (EGuardDirection Side : { EGuardDirection::Left, EGuardDirection::Top, EGuardDirection::Right })
 	{
 		const FVector2D P = Centre + SideOffset(Side, Size);
-		const bool bGuarding = Combat->GetGuardDirection() == Side || Combat->bBlockAllDirections;
+		const bool bGuarding = Combat->GetGuardDirection() == Side || Combat->bBlockAllDirections || Combat->IsShieldUp();
 		FLinearColor Color = bGuarding && Combat->bGuardRaised ? GuardActive : GuardIdle;
 		float Scale = 1.f;
 
-		if (bAttacking && Combat->GetAttackDirection() == Side)
+		if (bAttacking && Combat->GetAttackDirection() == Side && Combat->GetAttackKind() != EAttackKind::GuardBreak)
 		{
 			Color = Combat->IsCurrentAttackUnblockable() ? IncomingUnblockable : IncomingAttack;
 			Scale = 1.5f;
@@ -203,8 +224,9 @@ void AConquerHUD::DrawControlsHint()
 {
 	static const TCHAR* Lines[] = {
 		TEXT("Move WASD / left stick    Camera mouse / right stick"),
-		TEXT("Light LMB / RB    Heavy RMB / RT    Guard break E / X    Feint Q / B"),
-		TEXT("Dodge Space / A    Lock on Tab / LT (then mouse or right stick picks guard side)"),
+		TEXT("Light LMB / RB    Heavy RMB / RT    Guard break E / X (also counters one)    Feint Q / B"),
+		TEXT("Guard F / LB (tap as a blow lands to parry)    Dodge Space / A (attack out of it to lunge)"),
+		TEXT("Lock on Tab / LT (then mouse or right stick picks guard side; a timed flick parries)"),
 		TEXT("Rage R / Y when the bar is full. Heavy on a staggered, wounded enemy executes."),
 	};
 	float Y = 20.f;

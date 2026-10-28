@@ -138,6 +138,7 @@ void AConquerCharacterBase::ApplyPlaceholderBody()
 	}
 	Shield->AttachToComponent(MeshComp, FAttachmentTransformRules::KeepRelativeTransform, ShieldSocket);
 	Shield->SetRelativeLocationAndRotation(ShieldLocation, ShieldRotation);
+	Shield->SetRelativeScale3D(FVector(ShieldScale));
 
 	if (!BodyTint.Equals(FLinearColor::White))
 	{
@@ -193,6 +194,10 @@ void AConquerCharacterBase::ApplyPlaceholderAnimations()
 	Fill(Combat->ThrustAttack.MontageLeft, ThrustMontagePath);
 	Fill(Combat->ThrustAttack.MontageTop, ThrustMontagePath);
 	Fill(Combat->ThrustAttack.MontageRight, ThrustMontagePath);
+	// The dodge attack is a quick overhead light for now.
+	Fill(Combat->DodgeAttack.MontageLeft, LightTopMontagePath);
+	Fill(Combat->DodgeAttack.MontageTop, LightTopMontagePath);
+	Fill(Combat->DodgeAttack.MontageRight, LightTopMontagePath);
 
 	if (DeathMontages.Num() == 0)
 	{

@@ -38,6 +38,9 @@ public:
 	/** Kills this character outright (used by executions). */
 	void Kill(AActor* Killer);
 
+	/** Ranged attacks: called on the active frame of a Shot. Archers loose an arrow. */
+	virtual void FireProjectile(const FAttackSpec& Spec) {}
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -124,6 +127,9 @@ protected:
 
 	UPROPERTY(Config)
 	FRotator ShieldRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Config)
+	float ShieldScale = 1.f;
 
 	/** Placeholder combat animations, also set in DefaultGame.ini. Montages set on the components win. */
 	UPROPERTY(Config) FSoftObjectPath LightLeftMontagePath;

@@ -3,6 +3,7 @@
 #include "EnemySoldier.h"
 #include "AttributesComponent.h"
 #include "ConquerHUD.h"
+#include "CombatTestDriver.h"
 #include "Conquer.h"
 #include "Camera/CameraActor.h"
 #include "GameFramework/HUD.h"
@@ -22,6 +23,15 @@ AConquerGameMode::AConquerGameMode()
 void AConquerGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+
+#if !UE_BUILD_SHIPPING
+	// -ConquerCombatTest: the duel mechanics, run headless instead of the arena waves.
+	if (FParse::Param(FCommandLine::Get(), TEXT("ConquerCombatTest")))
+	{
+		bSpawnArenaWaves = false;
+		GetWorld()->SpawnActor<ACombatTestDriver>();
+	}
+#endif
 
 	bool bLevelHasEnemies = false;
 	for (TActorIterator<AEnemySoldier> It(GetWorld()); It; ++It)
@@ -189,6 +199,90 @@ void AConquerGameMode::ShowHint(const FString& Text, float Duration)
 	Hint = Text;
 	HintStart = GetWorld()->GetTimeSeconds();
 	HintEnd = HintStart + Duration;
+}
+
+void AConquerGameMode::QueueHint(const FString& Text, float Duration)
+{
+	if (GetWorld()->GetTimeSeconds() >= HintEnd - 0.5f && PendingHints.Num() == 0)
+	{
+		ShowHint(Text, Duration);
+		return;
+	}
+	PendingHints.Add(TPair<FString, float>(Text, Duration));
+	if (!GetWorldTimerManager().IsTimerActive(HintTimer))
+	{
+		GetWorldTimerManager().SetTimer(HintTimer, this, &AConquerGameMode::ShowNextHint, FMath::Max(HintEnd - GetWorld()->GetTimeSeconds(), 0.1f), false);
+	}
+}
+
+void AConquerGameMode::ShowNextHint()
+{
+	if (PendingHints.Num() == 0)
+	{
+		return;
+	}
+	const TPair<FString, float> Next = PendingHints[0];
+	PendingHints.RemoveAt(0);
+	ShowHint(Next.Key, Next.Value);
+	if (PendingHints.Num() > 0)
+	{
+		GetWorldTimerManager().SetTimer(HintTimer, this, &AConquerGameMode::ShowNextHint, Next.Value, false);
+	}
+}
+
+void AConquerGameMode::ShowFirstTimeHint(FName Key, const FString& Text, float Duration)
+{
+	if (!HintsShown.Contains(Key))
+	{
+		HintsShown.Add(Key);
+		QueueHint(Text, Duration);
+	}
+}
+
+void AConquerGameMode::NotifyEnemySpawned(AEnemySoldier* Enemy)
+{
+	if (Enemy && !Enemy->FirstSightHint.IsEmpty())
+	{
+		ShowFirstTimeHint(Enemy->GetClass()->GetFName(), Enemy->FirstSightHint, 8.f);
+	}
+}
+
+void AConquerGameMode::HitStop(float RealSeconds)
+{
+	// Timers run on dilated time, so the restore comes after RealSeconds of real time.
+	const float Dilation = 0.05f;
+	UGameplayStatics::SetGlobalTimeDilation(this, Dilation);
+	GetWorldTimerManager().SetTimer(HitStopTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+	}), RealSeconds * Dilation, false);
+}
+
+void AConquerGameMode::Flash(const FLinearColor& Color, float Seconds)
+{
+	FlashColor = Color;
+	FlashStart = GetWorld()->GetRealTimeSeconds();
+	FlashSeconds = FMath::Max(Seconds, 0.01f);
+}
+
+FLinearColor AConquerGameMode::GetFlash() const
+{
+	const float Fade = 1.f - (GetWorld()->GetRealTimeSeconds() - FlashStart) / FlashSeconds;
+	FLinearColor Color = FlashColor;
+	Color.A *= FMath::Clamp(Fade, 0.f, 1.f);
+	return Color;
+}
+
+void AConquerGameMode::ShowCallout(const FString& Text)
+{
+	Callout = Text;
+	CalloutStart = GetWorld()->GetRealTimeSeconds();
+}
+
+float AConquerGameMode::GetCalloutAlpha() const
+{
+	const float Age = GetWorld()->GetRealTimeSeconds() - CalloutStart;
+	return FMath::Clamp(1.f - (Age - 0.4f) / 0.4f, 0.f, 1.f);
 }
 
 float AConquerGameMode::MessageAlpha(float Start, float End) const

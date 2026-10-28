@@ -49,6 +49,29 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	FString DisplayName = TEXT("Soldier");
+
+	/** Shown the first time one of these joins a fight in a level. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	FString FirstSightHint;
+};
+
+/**
+ * A shield guard: his shield stops every blockable blow from in front, so Wren has to guard break him or get round
+ * to his side. He turns slowly to make that possible.
+ */
+UCLASS(Config = Game)
+class CONQUER_API AShieldSoldier : public AEnemySoldier
+{
+	GENERATED_BODY()
+
+public:
+	AShieldSoldier();
+
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** Degrees per second he turns to face Wren. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float TurnRate = 100.f;
 };
 
 /** The gate captain, mini-boss of the opening: slow, hard-hitting, readable. */

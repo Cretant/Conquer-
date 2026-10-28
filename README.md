@@ -27,12 +27,22 @@ Any key on the title screen starts a new game in Marrowford (1 and 2 open the Ar
 
 - **Opening:** a short skippable cutscene at the farm (any key skips). Soldiers come up the lane, a cut to black, the farm burns, and Wren gets up and takes the pitchfork.
 - **The lane:** three soldiers, one at a time.
-- **The burning square:** five soldiers, then two more. A side path leads to the smithy's whetstone, which makes her hits stronger.
-- **The mill bridge:** a checkpoint, then waves from the far bank. The way back burns behind her.
+- **The burning square:** four soldiers, then a shield guard, two archers and one more soldier. A side path leads to the smithy's whetstone, which makes her hits stronger.
+- **The mill bridge:** a checkpoint, then waves from the far bank: soldiers, two archers and a shield guard. The way back burns behind her.
 - **The village gate:** a checkpoint, then the gate captain. Rage stays locked until he has her at low health. She takes his sword when he falls, the portcullis rises, and the level ends past the gate.
 - **Checkpoints:** dying brings her back at the last checkpoint with that fight reset.
 
 Headless check: `-ConquerMarrowfordTest` walks through every fight, a death and respawn, and the ending, logging each step. Previews are in `Art/Previews/Marrowford_*.png`.
+
+## Combat
+
+- **Parry:** guard on the blow's side no more than 0.15 s before it lands (tap F / LB, or flick the guard over while locked on). The attacker staggers, Wren gains Rage, and the hit freezes for a moment with a gold flash. Guarding earlier just blocks, at a cost in stamina. Arrows are deflected the same way. Unblockable (orange) attacks can't be parried.
+- **Guard break:** E / X throws a guarding enemy open for a moment. Enemies' guard breaks flash blue: press your own after theirs has started to counter it, which leaves them open instead.
+- **Dodge:** short i-frames at the start, and a stamina cost. It cuts short a light's recovery, or a heavy before 60% of its windup (after that the heavy is committed). Light straight out of a dodge is a lunging dodge attack.
+- **Shield guards** block everything from the front, so guard break them or get round to their side (they turn slowly). **Archers** keep their distance and loose burning arrows after a glowing draw.
+- **Garrick** grabs for a raised guard (counter it), and a parried swing leaves him open for 1.4 s.
+- Each mechanic gets a one-line hint the first time it matters in a level.
+- Headless check: `-ConquerCombatTest` in the Arena runs all of this and logs PASS or FAIL for each.
 
 ## Controls
 
@@ -41,11 +51,12 @@ Headless check: `-ConquerMarrowfordTest` walks through every fight, a death and 
 | Move | WASD | Left stick |
 | Camera | Mouse | Right stick |
 | Lock on (toggle) | Tab or middle mouse | LT |
-| Choose guard side (while locked on) | Move the mouse left, up or right | Right stick |
-| Light attack | Left mouse | RB |
-| Heavy attack (parry if timed into an incoming attack from the same side) | Right mouse | RT |
-| Guard break | E | X |
+| Choose guard side (while locked on; a flick to the blow's side as it lands parries) | Move the mouse left, up or right | Right stick |
+| Guard: hold to block (out of lock-on it turns to the next blow), tap as a blow lands to parry | F | LB |
+| Light attack (straight out of a dodge: a lunging dodge attack) | Left mouse | RB |
+| Heavy attack | Right mouse | RT |
+| Guard break (pressed as an enemy's comes in, it counters it) | E | X |
 | Feint a heavy | Q | B |
-| Dodge | Space | A |
+| Dodge (cancels a light's follow-through, or a heavy before it commits) | Space | A |
 | Unleash Rage | R | Y |
 | Execute | Heavy on a staggered enemy below 30% health | RT |

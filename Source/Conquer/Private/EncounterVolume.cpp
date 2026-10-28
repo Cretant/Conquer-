@@ -53,9 +53,11 @@ void AEncounterVolume::Start()
 		{
 			GameMode->ShowBanner(EncounterName, 3.f);
 		}
-		if (!StartHint.IsEmpty())
+		TArray<FString> Hints;
+		StartHint.ParseIntoArray(Hints, TEXT("|"));
+		for (const FString& Hint : Hints)
 		{
-			GameMode->ShowHint(StartHint, 8.f);
+			GameMode->QueueHint(Hint.TrimStartAndEnd(), 7.f);
 		}
 	}
 	OnStarted.Broadcast(this);
@@ -134,6 +136,10 @@ void AEncounterVolume::SpawnWave(const FEncounterWave& Wave)
 		if (AEnemySoldier* Enemy = GetWorld()->SpawnActor<AEnemySoldier>(Class, Location + FVector(0.f, 0.f, 100.f), FRotator(0.f, Facing.Rotation().Yaw, 0.f), Params))
 		{
 			Enemies.Add(Enemy);
+			if (AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>())
+			{
+				GameMode->NotifyEnemySpawned(Enemy);
+			}
 		}
 	}
 	UE_LOG(LogConquer, Log, TEXT("Encounter %s: wave of %d %s"), *EncounterName, Wave.Count, *Class->GetName());
