@@ -1,4 +1,5 @@
 #include "GarrickBoss.h"
+#include "Animation/AnimInstance.h"
 #include "GarrickAIController.h"
 #include "BurningPatch.h"
 #include "CombatComponent.h"
@@ -164,4 +165,14 @@ void AGarrickBoss::HandleDowned(AActor* DamageCauser)
 	Combat->bBlockAllDirections = false;
 	Combat->Stagger(9999.f);
 	Combat->PlayReaction(KneelMontage);
+
+	// The kneel clip gets back up at its end: hold him down on one knee once he's there.
+	FTimerHandle Hold;
+	GetWorldTimerManager().SetTimer(Hold, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (UAnimInstance* Anim = GetMesh()->GetAnimInstance(); Anim && KneelMontage && !IsDead())
+		{
+			Anim->Montage_Pause(KneelMontage);
+		}
+	}), 2.f, false);
 }

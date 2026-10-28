@@ -559,7 +559,8 @@ void AWrenCharacter::UpdateExecution(float DeltaSeconds)
 	if (!Target->IsDead() && ExecutionTime >= ExecutionKillAt)
 	{
 		// The last blow: he's thrown back, the world stops a moment, she's healed and enraged.
-		Target->DeathImpulse = Forward * (ExecutionVariant == 3 ? 300.f : 850.f) + FVector(0.f, 0.f, 300.f);
+		// A kneeling boss slumps where he is; anyone else is thrown back.
+		Target->DeathImpulse = ExecutionVariant == 3 ? Forward * 120.f : Forward * 850.f + FVector(0.f, 0.f, 300.f);
 		Target->Kill(this);
 		Attributes->Heal(ExecuteHeal);
 		Rage->AddRage(RageOnKill * 1.5f);

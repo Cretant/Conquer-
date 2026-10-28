@@ -2,6 +2,7 @@
 #include "GarrickBoss.h"
 #include "Conquer.h"
 #include "AttributesComponent.h"
+#include "WrenCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "TimerManager.h"
@@ -57,7 +58,23 @@ void AConquerBossGameMode::AdvanceBossTest()
 	{
 	case 0: Target->GetAttributes()->ApplyDamage(250.f, Player); break;  // into phase two
 	case 1: Target->GetAttributes()->ApplyDamage(400.f, Player); break;  // down on one knee
-	case 2: Target->Kill(Player); break;                                // the execution
+	case 2:
+	{
+		// The execution: Wren steps up to the kneeling boss and finishes him (or, failing that, he just dies).
+		AWrenCharacter* Wren = Cast<AWrenCharacter>(Player);
+		if (Wren)
+		{
+			const FVector Front = Target->GetActorLocation() + Target->GetActorForwardVector() * 140.f;
+			Wren->SetActorLocation(FVector(Front.X, Front.Y, Wren->GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
+			Wren->SetActorRotation((Target->GetActorLocation() - Front).Rotation());
+		}
+		if (!Wren || !Wren->TryExecute())
+		{
+			UE_LOG(LogConquer, Warning, TEXT("Boss test: execution not possible, killing him outright"));
+			Target->Kill(Player);
+		}
+		break;
+	}
 	default: return;
 	}
 	UE_LOG(LogConquer, Log, TEXT("Boss test step %d: %s at %.0f health"), TestStep, *Target->GetName(), Target->GetAttributes()->Health);
