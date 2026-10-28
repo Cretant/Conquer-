@@ -1,7 +1,8 @@
-﻿"""Builds /Game/Maps/KeepHall, Sir Garrick Vane's fight: an enclosed stone hall with pillars, banners and braziers,
+"""Builds /Game/Maps/KeepHall, Sir Garrick Vane's fight: a roofed stone hall lit by braziers and torches, with pillars and banners,
 run by ConquerBossGameMode (no waves, just the boss). Also makes the glowing material for the burning patches.
 
-Run from the repo root after Tools/build_sword.py (it reuses the placeholder material). Re-running replaces it:
+Run from the repo root after Tools/build_sword.py (it reuses the placeholder material). To rebuild, delete
+Content/Maps/KeepHall.umap first (the editor won't replace a map it has loaded), then:
     UnrealEditor-Cmd.exe Conquer.uproject -run=pythonscript -script="Tools/build_keephall.py" -unattended -nosplash
 """
 import os
@@ -22,6 +23,7 @@ mel = unreal.MaterialEditingLibrary
 
 HALF = 1500.0      # the hall is 3000 x 3000
 WALL_HEIGHT = 700.0
+EXPOSURE = 14.0    # auto exposure held at one scene luminance (higher reads darker)
 
 
 def log(msg):
@@ -94,38 +96,55 @@ for side in (-1, 1):
 # The lord's banner behind where Garrick stands.
 block("Cube", (HALF - 60, 0, 400), (0.06, 3.0, 5.0), banner, "LordBanner")
 
-# Braziers: iron bowls on stone plinths, with a glow and a light.
+# A roof: the hall is lit from within, by fire, not by a shaft of sun on the flagstones.
+block("Cube", (0, 0, WALL_HEIGHT + 25), (HALF / 50, HALF / 50, 0.5), stone, "Roof")
+
+
+def warm_light(location, intensity, radius, label):
+    light = actors.spawn_actor_from_class(unreal.PointLight, unreal.Vector(*location), unreal.Rotator(0, 0, 0))
+    light.set_actor_label(label)
+    lc = light.point_light_component
+    lc.set_editor_property("intensity", intensity)
+    lc.set_editor_property("light_color", unreal.Color(r=255, g=170, b=100, a=255))
+    lc.set_editor_property("attenuation_radius", radius)
+    return light
+
+
+# Braziers: iron bowls on stone plinths, each with its glow and a light.
 for i, (x, y) in enumerate(((-700, 600), (-700, -600), (700, 600), (700, -600))):
     block("Cylinder", (x, y, 45), (0.6, 0.6, 0.9), stone, "Brazier%d" % i)
     block("Cylinder", (x, y, 100), (1.0, 1.0, 0.2), iron, "BrazierBowl%d" % i)
     block("Cylinder", (x, y, 112), (0.8, 0.8, 0.04), fire, "BrazierCoals%d" % i)
-    light = actors.spawn_actor_from_class(unreal.PointLight, unreal.Vector(x, y, 180), unreal.Rotator(0, 0, 0))
-    light.set_actor_label("BrazierLight%d" % i)
-    lc = light.point_light_component
-    lc.set_editor_property("intensity", 1200.0)
-    lc.set_editor_property("light_color", unreal.Color(r=255, g=140, b=60, a=255))
-    lc.set_editor_property("attenuation_radius", 700.0)
+    warm_light((x, y, 190), 2500.0, 1400.0, "BrazierLight%d" % i)
 
-# Late daylight falling steeply through the open roof onto the floor (a low sun leaves the hall in the walls'
-# shadow, lit only by the blue sky, and auto exposure blows it out), and a faint sky.
-sun = actors.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(0, 0, 900), unreal.Rotator(0, -72, -30))
-sun.set_actor_label("Sun")
-sun.light_component.set_editor_property("atmosphere_sun_light", True)
-sun.light_component.set_editor_property("intensity", 10.0)
-sun.light_component.set_editor_property("light_color", unreal.Color(r=255, g=220, b=180, a=255))
-sky = actors.spawn_actor_from_class(unreal.SkyLight, unreal.Vector(0, 0, 800), unreal.Rotator(0, 0, 0))
-sky.set_actor_label("SkyLight")
-sky.light_component.set_editor_property("real_time_capture", True)
-sky.light_component.set_editor_property("intensity", 0.25)
-actors.spawn_actor_from_class(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0)).set_actor_label("SkyAtmosphere")
+# Torches in iron brackets along the long walls, between the banners, and two by the lord's banner.
+torches = [(x, side * (HALF - 70)) for side in (-1, 1) for x in (-1200, -300, 300, 1200)]
+torches += [(HALF - 70, -500), (HALF - 70, 500)]
+for i, (x, y) in enumerate(torches):
+    block("Cube", (x, y, 330), (0.12, 0.12, 0.5), iron, "Torch%d" % i)
+    block("Sphere", (x, y, 365), (0.14, 0.14, 0.2), fire, "TorchFlame%d" % i)
+    inward = unreal.Vector(-x, -y, 0)
+    inward.normalize()
+    warm_light((x + inward.x * 60, y + inward.y * 60, 370), 900.0, 1100.0, "TorchLight%d" % i)
+
+# A faint cool fill so the stone in shadow still reads (Lumen bounces the firelight on top).
+sky = actors.spawn_actor_from_class(unreal.SkyLight, unreal.Vector(0, 0, 400), unreal.Rotator(0, 0, 0))
+sky.set_actor_label("AmbientFill")
+sky.light_component.set_editor_property("source_type", unreal.SkyLightSourceType.SLS_SPECIFIED_CUBEMAP)
+sky.light_component.set_editor_property("cubemap", unreal.load_object(None, "/Engine/MapTemplates/Sky/SunsetAmbientCubemap.SunsetAmbientCubemap"))
+sky.light_component.set_editor_property("intensity", 0.35)
+sky.light_component.set_editor_property("lower_hemisphere_is_black", False)
 # No height fog: inside the walls its blue in-scatter floods the whole hall.
-# Exposure held a little down, or the sunlit flagstones blow out to white.
+
+# Exposure held still, so the eye doesn't adapt the dimness away or blow the fire out.
 post = actors.spawn_actor_from_class(unreal.PostProcessVolume, unreal.Vector(0, 0, 0))
 post.set_actor_label("PostProcess")
 post.set_editor_property("unbound", True)
 settings = post.get_editor_property("settings")
-settings.set_editor_property("override_auto_exposure_bias", True)
-settings.set_editor_property("auto_exposure_bias", -1.5)
+for name, value in (("auto_exposure_min_brightness", EXPOSURE), ("auto_exposure_max_brightness", EXPOSURE),
+                    ("auto_exposure_bias", 0.0)):
+    settings.set_editor_property("override_" + name, True)
+    settings.set_editor_property(name, value)
 post.set_editor_property("settings", settings)
 
 # Wren starts at the door end, facing down the hall; Garrick walks in at the far end.
