@@ -9,6 +9,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
+class UStaticMesh;
 
 /**
  * The player. Out of lock-on she fights crowds hack-and-slash style; locked on, the right stick (or mouse)
@@ -33,6 +34,30 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Wren")
 	bool IsLockedOn() const { return LockTarget != nullptr; }
+
+	/** Swaps her weapon: the pitchfork she starts Marrowford with, or the sword. */
+	void EquipPitchfork(bool bPitchfork);
+
+	bool HasPitchfork() const { return bPitchforkEquipped; }
+
+	/** Multiplies the damage of every attack (the smithy's whetstone). */
+	void SetDamageBonus(float Multiplier);
+
+	/** Switches Rage on for good and unleashes it at once (the gate captain fight). */
+	void UnlockRage();
+
+	/** Shows or hides the weapon in her hand (the opening starts her empty-handed). */
+	void ShowWeapon(bool bShow);
+
+	/** The opening: knocked to the ground (holding a fall pose), or getting back up. */
+	void SetKnockedDown(bool bDown);
+
+	/** The pitchfork: a farm tool, so it hits a little softer and shorter than the sword. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wren|Weapon")
+	float PitchforkDamageScale = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wren|Weapon")
+	float PitchforkRangeScale = 0.9f;
 
 	/** Rage gained per successful hit, per kill and per execution. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wren|Rage")
@@ -109,6 +134,20 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AConquerCharacterBase> LockTarget;
+
+	void ApplyWeaponStats();
+
+	/** The pitchfork's mesh and grip, set in DefaultGame.ini like the sword's. */
+	UPROPERTY(Config) FSoftObjectPath PitchforkMeshPath;
+	UPROPERTY(Config) FVector PitchforkLocation = FVector::ZeroVector;
+	UPROPERTY(Config) FRotator PitchforkRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> SwordMesh;
+
+	FAttackSpec SwordLight, SwordHeavy, SwordGuardBreak;
+	bool bPitchforkEquipped = false;
+	float DamageBonus = 1.f;
 
 	FVector2D MoveInput = FVector2D::ZeroVector;
 	FVector2D GuardAccumulator = FVector2D::ZeroVector;

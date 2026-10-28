@@ -6,6 +6,7 @@
 #include "ConquerHUD.generated.h"
 
 class AConquerCharacterBase;
+class AConquerGameMode;
 class UCombatComponent;
 
 /**
@@ -27,4 +28,5 @@ private:
 	void DrawBar(float X, float Y, float W, float H, float Fraction, const FLinearColor& Fill, const FString& Label);
 	void DrawGuardIndicator(const FVector2D& Centre, const UCombatComponent* Combat, float Size, bool bHighlight);
 	void DrawControlsHint();
+	void DrawOverlay(const AConquerGameMode* GameMode);
 };

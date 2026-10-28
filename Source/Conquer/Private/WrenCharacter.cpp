@@ -2,8 +2,13 @@
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
+#include "ConquerGameMode.h"
 #include "Conquer.h"
 #include "Camera/CameraComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -41,6 +46,79 @@ void AWrenCharacter::BeginPlay()
 	Super::BeginPlay();
 	Rage->OnRageStateChanged.AddDynamic(this, &AWrenCharacter::HandleRageChanged);
 	UpdateMovementMode();
+
+	SwordMesh = Weapon->GetStaticMesh();
+	SwordLight = Combat->LightAttack;
+	SwordHeavy = Combat->HeavyAttack;
+	SwordGuardBreak = Combat->GuardBreakAttack;
+}
+
+void AWrenCharacter::EquipPitchfork(bool bPitchfork)
+{
+	UStaticMesh* Pitchfork = PitchforkMeshPath.IsValid() ? Cast<UStaticMesh>(PitchforkMeshPath.TryLoad()) : nullptr;
+	if (bPitchfork && !Pitchfork)
+	{
+		UE_LOG(LogConquer, Warning, TEXT("Pitchfork mesh %s not found. Run Tools/build_marrowford.py."), *PitchforkMeshPath.ToString());
+	}
+	bPitchforkEquipped = bPitchfork;
+	Weapon->SetStaticMesh(bPitchfork && Pitchfork ? Pitchfork : SwordMesh.Get());
+	Weapon->SetRelativeLocationAndRotation(bPitchfork ? PitchforkLocation : WeaponLocation, bPitchfork ? PitchforkRotation : WeaponRotation);
+	ApplyWeaponStats();
+}
+
+void AWrenCharacter::SetDamageBonus(float Multiplier)
+{
+	DamageBonus = Multiplier;
+	ApplyWeaponStats();
+}
+
+void AWrenCharacter::ApplyWeaponStats()
+{
+	// Montages stay as they are; only damage and reach change with the weapon.
+	auto Apply = [this](FAttackSpec& Spec, const FAttackSpec& Sword)
+	{
+		Spec.Damage = Sword.Damage * DamageBonus * (bPitchforkEquipped ? PitchforkDamageScale : 1.f);
+		Spec.Range = Sword.Range * (bPitchforkEquipped ? PitchforkRangeScale : 1.f);
+	};
+	Apply(Combat->LightAttack, SwordLight);
+	Apply(Combat->HeavyAttack, SwordHeavy);
+	Apply(Combat->GuardBreakAttack, SwordGuardBreak);
+}
+
+void AWrenCharacter::ShowWeapon(bool bShow)
+{
+	Weapon->SetVisibility(bShow);
+}
+
+void AWrenCharacter::SetKnockedDown(bool bDown)
+{
+	UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+	UAnimMontage* Fall = DeathMontages.Num() > 0 ? DeathMontages[0].Get() : nullptr;
+	if (!Anim || !Fall)
+	{
+		return;
+	}
+	if (bDown)
+	{
+		// Straight to the end of the fall: the cut hides the blow itself.
+		Anim->Montage_Play(Fall);
+		Anim->Montage_SetPosition(Fall, Fall->GetPlayLength() - 0.05f);
+	}
+	else
+	{
+		Anim->Montage_Stop(0.8f, Fall);
+	}
+}
+
+void AWrenCharacter::UnlockRage()
+{
+	if (Rage->bEnabled)
+	{
+		return;
+	}
+	Rage->bEnabled = true;
+	Rage->AddRage(Rage->MaxRage);
+	Rage->TryActivate();
 }
 
 // --- Input ---------------------------------------------------------------
@@ -351,7 +429,13 @@ void AWrenCharacter::HandleDeath(AActor* Killer)
 	SetLockTarget(nullptr);
 	Super::HandleDeath(Killer);
 
-	// Restart the level after a moment: the prototype has no checkpoints yet.
+	AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
+	if (GameMode && GameMode->HandlePlayerDeath(this))
+	{
+		return;
+	}
+
+	// Levels without checkpoints restart after a moment.
 	FTimerHandle Handle;
 	GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{

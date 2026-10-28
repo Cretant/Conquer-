@@ -5,6 +5,7 @@
 #include "CombatComponent.h"
 #include "AttributesComponent.h"
 #include "RageComponent.h"
+#include "ConquerGameMode.h"
 #include "Engine/Canvas.h"
 #include "EngineUtils.h"
 
@@ -40,6 +41,16 @@ void AConquerHUD::DrawHUD()
 	const float W = Canvas->ClipX;
 	const float H = Canvas->ClipY;
 
+	// Cutscenes: bars top and bottom, nothing else of the HUD.
+	const AConquerGameMode* GameMode = GetWorld()->GetAuthGameMode<AConquerGameMode>();
+	if (GameMode && GameMode->bLetterbox)
+	{
+		DrawRect(FLinearColor::Black, 0.f, 0.f, W, H * 0.12f);
+		DrawRect(FLinearColor::Black, 0.f, H * 0.88f, W, H * 0.12f);
+		DrawOverlay(GameMode);
+		return;
+	}
+
 	// Rage tints the whole screen red.
 	if (Wren->GetRage()->IsRageActive())
 	{
@@ -54,8 +65,11 @@ void AConquerHUD::DrawHUD()
 	DrawBar(BarX, BarY, 260.f, 10.f, Wren->GetAttributes()->GetStaminaFraction(), FLinearColor(0.85f, 0.75f, 0.3f), TEXT("Stamina"));
 	BarY += 20.f;
 	const URageComponent* Rage = Wren->GetRage();
-	const bool bRageReady = Rage->GetRageFraction() >= 1.f && !Rage->IsRageActive();
-	DrawBar(BarX, BarY, 260.f, 10.f, Rage->GetRageFraction(), RageRed, bRageReady ? TEXT("RAGE READY [R / Y]") : TEXT("Rage"));
+	if (Rage->bEnabled)
+	{
+		const bool bRageReady = Rage->GetRageFraction() >= 1.f && !Rage->IsRageActive();
+		DrawBar(BarX, BarY, 260.f, 10.f, Rage->GetRageFraction(), RageRed, bRageReady ? TEXT("RAGE READY [R / Y]") : TEXT("Rage"));
+	}
 
 	// Boss health across the top of the screen.
 	for (TActorIterator<AGarrickBoss> It(GetWorld()); It; ++It)
@@ -108,7 +122,43 @@ void AConquerHUD::DrawHUD()
 		DrawGuardIndicator(FVector2D(W * 0.5f, H * 0.62f), Wren->GetCombat(), 22.f, true);
 	}
 
-	DrawControlsHint();
+	if (!GameMode || GameMode->bShowControlsHint)
+	{
+		DrawControlsHint();
+	}
+	DrawOverlay(GameMode);
+}
+
+void AConquerHUD::DrawOverlay(const AConquerGameMode* GameMode)
+{
+	if (!GameMode)
+	{
+		return;
+	}
+	const float W = Canvas->ClipX;
+	const float H = Canvas->ClipY;
+	const float Scale = FMath::Max(1.f, H / 720.f);
+
+	if (GameMode->FadeAlpha > 0.f)
+	{
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, FMath::Clamp(GameMode->FadeAlpha, 0.f, 1.f)), 0.f, 0.f, W, H);
+	}
+
+	auto DrawCentred = [this, W](const FString& Text, float Y, float TextScale, const FLinearColor& Color)
+	{
+		float TextW = 0.f, TextH = 0.f;
+		GetTextSize(Text, TextW, TextH, nullptr, TextScale);
+		DrawText(Text, Color, (W - TextW) * 0.5f, Y - TextH * 0.5f, nullptr, TextScale);
+	};
+
+	if (const float Alpha = GameMode->GetBannerAlpha(); Alpha > 0.f)
+	{
+		DrawCentred(GameMode->GetBanner(), H * 0.3f, 2.6f * Scale, FLinearColor(0.95f, 0.88f, 0.78f, Alpha));
+	}
+	if (const float Alpha = GameMode->GetHintAlpha(); Alpha > 0.f)
+	{
+		DrawCentred(GameMode->GetHint(), H * 0.78f, 1.2f * Scale, FLinearColor(1.f, 1.f, 1.f, 0.9f * Alpha));
+	}
 }
 
 void AConquerHUD::DrawBar(float X, float Y, float W, float H, float Fraction, const FLinearColor& Fill, const FString& Label)

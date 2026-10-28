@@ -4,7 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "ConquerMenuPlayerController.generated.h"
 
-/** Title screen controller: any key, mouse button or gamepad button starts the arena. */
+/** Title screen controller: any key, mouse button or gamepad button starts a new game in Marrowford. */
 UCLASS()
 class CONQUER_API AConquerMenuPlayerController : public APlayerController
 {
@@ -13,10 +13,14 @@ class CONQUER_API AConquerMenuPlayerController : public APlayerController
 public:
 	AConquerMenuPlayerController();
 
+	/** The first level: a new game. Every key but the test ones opens it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	TSoftObjectPtr<UWorld> FirstLevel;
+
+	/** Test fights: 1 opens the arena, 2 the Keep Hall. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TSoftObjectPtr<UWorld> ArenaLevel;
 
-	/** Opened by the 2 key; every other key opens the arena. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TSoftObjectPtr<UWorld> KeepHallLevel;
 

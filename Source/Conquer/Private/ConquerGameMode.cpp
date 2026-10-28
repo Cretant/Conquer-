@@ -5,6 +5,7 @@
 #include "ConquerHUD.h"
 #include "Conquer.h"
 #include "Camera/CameraActor.h"
+#include "GameFramework/HUD.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -57,7 +58,8 @@ void AConquerGameMode::BeginPlay()
 		ScheduleNextShot();
 	}
 
-	// -ConquerShotView=X,Y,Z,Pitch,Yaw watches from a fixed camera instead of over Wren's shoulder.
+	// -ConquerShotView=X,Y,Z,Pitch,Yaw watches from a fixed camera instead of over Wren's shoulder
+	// (add -ConquerShotHideHUD for a clean picture, e.g. a map from above).
 	FString View;
 	if (FParse::Value(FCommandLine::Get(), TEXT("ConquerShotView="), View, false))
 	{
@@ -73,6 +75,10 @@ void AConquerGameMode::BeginPlay()
 				if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 				{
 					PC->SetViewTarget(GetWorld()->SpawnActor<ACameraActor>(Location, Rotation));
+					if (PC->MyHUD && FParse::Param(FCommandLine::Get(), TEXT("ConquerShotHideHUD")))
+					{
+						PC->MyHUD->bShowHUD = false;
+					}
 				}
 			}), 0.5f, false);
 		}
@@ -153,6 +159,10 @@ void AConquerGameMode::SpawnCaptain()
 
 void AConquerGameMode::HandleEnemyDeath(AActor* Killer)
 {
+	if (!bSpawnArenaWaves && !bCaptainSpawned)
+	{
+		return;
+	}
 	if (bCaptainSpawned)
 	{
 		UE_LOG(LogConquer, Log, TEXT("Arena cleared"));
@@ -164,6 +174,32 @@ void AConquerGameMode::HandleEnemyDeath(AActor* Killer)
 		FTimerHandle Handle;
 		GetWorldTimerManager().SetTimer(Handle, this, &AConquerGameMode::SpawnCaptain, 3.f, false);
 	}
+}
+
+void AConquerGameMode::ShowBanner(const FString& Text, float Duration)
+{
+	Banner = Text;
+	BannerStart = GetWorld()->GetTimeSeconds();
+	BannerEnd = BannerStart + Duration;
+	UE_LOG(LogConquer, Log, TEXT("Banner: %s"), *Text);
+}
+
+void AConquerGameMode::ShowHint(const FString& Text, float Duration)
+{
+	Hint = Text;
+	HintStart = GetWorld()->GetTimeSeconds();
+	HintEnd = HintStart + Duration;
+}
+
+float AConquerGameMode::MessageAlpha(float Start, float End) const
+{
+	// Fades in over a third of a second and out over the last half second.
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now >= End)
+	{
+		return 0.f;
+	}
+	return FMath::Clamp(FMath::Min((Now - Start) / 0.3f, (End - Now) / 0.5f), 0.f, 1.f);
 }
 
 bool AConquerGameMode::TryTakeAttackToken(AActor* Enemy)

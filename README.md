@@ -21,6 +21,19 @@ This is the **combat prototype** for the opening fight. It uses gray-box art: pl
 
 All the combat numbers (timings, damage, stamina costs, AI reaction times) are editable properties, so they can be tuned in the editor without touching code.
 
+## Marrowford, the first level
+
+Any key on the title screen starts a new game in Marrowford (1 and 2 open the Arena and Keep Hall test fights). It is a greybox blockout built by `Tools/build_marrowford.py` and run by `MarrowfordGameMode`:
+
+- **Opening:** a short skippable cutscene at the farm (any key skips). Soldiers come up the lane, a cut to black, the farm burns, and Wren gets up and takes the pitchfork.
+- **The lane:** three soldiers, one at a time.
+- **The burning square:** five soldiers, then two more. A side path leads to the smithy's whetstone, which makes her hits stronger.
+- **The mill bridge:** a checkpoint, then waves from the far bank. The way back burns behind her.
+- **The village gate:** a checkpoint, then the gate captain. Rage stays locked until he has her at low health. She takes his sword when he falls, the portcullis rises, and the level ends past the gate.
+- **Checkpoints:** dying brings her back at the last checkpoint with that fight reset.
+
+Headless check: `-ConquerMarrowfordTest` walks through every fight, a death and respawn, and the ending, logging each step. Previews are in `Art/Previews/Marrowford_*.png`.
+
 ## Controls
 
 | Action | Keyboard and mouse | Controller |

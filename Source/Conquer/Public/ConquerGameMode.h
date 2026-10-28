@@ -5,6 +5,9 @@
 #include "ConquerGameMode.generated.h"
 
 class AEnemySoldier;
+class AWrenCharacter;
+class ALevelTriggerVolume;
+enum class EPickupKind : uint8;
 
 /**
  * Runs the prototype arena: a wave of soldiers, then the gate captain once they are all dead.
@@ -44,6 +47,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena")
 	TSubclassOf<AEnemySoldier> CaptainClass;
 
+	/** Wren died. Return true when the game mode brings her back itself (checkpoints); false reloads the level. */
+	virtual bool HandlePlayerDeath(AWrenCharacter* Wren) { return false; }
+
+	/** Wren walked into a checkpoint or the level's exit. */
+	virtual void NotifyLevelTrigger(ALevelTriggerVolume* Trigger) {}
+
+	/** Wren picked something up (it has already been applied to her). */
+	virtual void NotifyPickup(EPickupKind Kind, float Amount) {}
+
+	// What the HUD draws over the game: a centred banner, a hint line, letterbox bars and a fade to black.
+	void ShowBanner(const FString& Text, float Duration = 3.f);
+	void ShowHint(const FString& Text, float Duration = 6.f);
+	const FString& GetBanner() const { return Banner; }
+	const FString& GetHint() const { return Hint; }
+	float GetBannerAlpha() const { return MessageAlpha(BannerStart, BannerEnd); }
+	float GetHintAlpha() const { return MessageAlpha(HintStart, HintEnd); }
+
+	/** The full controls list in the corner; levels that teach controls as they go turn it off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bShowControlsHint = true;
+
+	/** 0 shows the game, 1 is black. */
+	float FadeAlpha = 0.f;
+
+	/** Cinematic bars; the HUD also hides Wren's bars while they're up. */
+	bool bLetterbox = false;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -65,6 +95,12 @@ private:
 	void TakeShot();
 	TArray<float> PendingShotTimes;
 	FTimerHandle ShotTimer;
+
+	float MessageAlpha(float Start, float End) const;
+	FString Banner;
+	FString Hint;
+	float BannerStart = 0.f, BannerEnd = 0.f;
+	float HintStart = 0.f, HintEnd = 0.f;
 
 	TMap<TWeakObjectPtr<AActor>, float> AttackTokenExpiry;
 	int32 AliveInWave = 0;
